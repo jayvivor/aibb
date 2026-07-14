@@ -61,7 +61,25 @@ def get_house(path: Path):
     return house
 
 
-def get_default_rooms() -> list[InteractiveRoom]:
+# def get_default_rooms() -> list[InteractiveRoom]:
+
+
+def get_default_schedule(cast_size: int = len(DEFAULT_CAST)) -> list[aibb.core.DefaultWeek]:
+
+    all_weeks = []
+    for wk_number in range(cast_size - 3):
+        all_weeks.append(aibb.core.StandardWeek(
+            name=f"Week {wk_number+1}",
+            hoh_comp_ruleset=DEFAULT_COMP_RULESET,
+            veto_comp_ruleset=DEFAULT_COMP_RULESET, 
+            )
+        )
+    all_weeks.append(aibb.core.FinaleWeek(hoh_comp_ruleset=DEFAULT_COMP_RULESET))
+    return all_weeks
+
+
+
+def get_default_house():
 
     living_room = aibb.core.LivingRoom()
     kitchen = aibb.core.Kitchen(
@@ -69,7 +87,9 @@ def get_default_rooms() -> list[InteractiveRoom]:
     )
     backyard = aibb.core.Backyard()
     hoh_room = aibb.core.HohRoom()
-    laundry_room = aibb.core.LaundryRoom()
+    laundry_room = aibb.core.LaundryRoom(
+        inventory=[f.deepcopy() for f in DEFAULT_PANTRY_INVENTORY],
+    )
     shower_room = aibb.core.ShowerRoom()
     stairs = InteractiveRoom(name="stairs")
     hallway = InteractiveRoom(name="hallway")
@@ -81,14 +101,17 @@ def get_default_rooms() -> list[InteractiveRoom]:
         aibb.core.Bedroom(name="Tiger Bedroom", num_beds=4),
     ]
 
-    living_room.doors = [kitchen, backyard, hallway]
-    kitchen.doors = [stairs, living_room, laundry_room]
-    stairs.doors = [hoh_room, kitchen]
-    hoh_room.doors = [stairs]
-    hallway.doors = [living_room, shower_room] + [bedroom for bedroom in bedrooms]  # type: ignore
-    shower_room.doors = [hallway]
-    for bedroom in bedrooms:
-        bedroom.doors = [hallway]
+    room_layout = {
+        living_room: [kitchen, backyard, hallway],
+        kitchen: [stairs, living_room, laundry_room],
+        stairs: [hoh_room, kitchen],
+        hoh_room: [stairs],
+        hallway: [living_room, shower_room] + [bedroom for bedroom in bedrooms],
+        shower_room: [hallway],
+        backyard: [living_room],
+    }
+
+    room_layout.update({bedroom: [hallway] for bedroom in bedrooms})
 
     rooms = [
         living_room,
@@ -97,34 +120,15 @@ def get_default_rooms() -> list[InteractiveRoom]:
         hoh_room,
         stairs,
         hallway,
+        laundry_room,
+        shower_room,
     ] + bedrooms
 
-    return rooms
-
-
-def get_default_schedule(cast_size: int = len(DEFAULT_CAST)) -> list[aibb.core.DefaultWeek]:
-
-    all_weeks = []
-
-    all_weeks.append(aibb.core.FinaleWeek(hoh_comp_ruleset=DEFAULT_COMP_RULESET))
-    for wk_number in range(cast_size - 3):
-        all_weeks.append(aibb.core.StandardWeek(
-            name=f"Week {wk_number+1}",
-            hoh_comp_ruleset=DEFAULT_COMP_RULESET,
-            veto_comp_ruleset=DEFAULT_COMP_RULESET, 
-            )
-        )
-        # Start with finale night
-    return all_weeks
-
-
-
-def get_default_house():
-
     house = aibb.core.DefaultHouse(
-        cast = DEFAULT_CAST,
-        rooms = get_default_rooms(),
-        schedule = get_default_schedule(),
+        cast=DEFAULT_CAST,
+        rooms=rooms,
+        room_layout=room_layout,
+        schedule=get_default_schedule(),
     )
 
     return house

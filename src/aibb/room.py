@@ -55,7 +55,7 @@ class Interactable(Base, ABC, Generic[A]):
         for a, hgs in self.interactors.items():
             for hg in hgs:
                 description += a.description.format(actor=hg.name, object=self.name)
-        return self.name
+        return description
     
 I = TypeVar("I", bound=Interactable)
 
@@ -284,7 +284,7 @@ class InteractiveRoom(Room, Generic[I]):
         {self.name.upper()}
         {'\n'.join(i.describe() for i in self.interactables)}
         '''
-        return self.name
+        return description
 
 
 class Bedroom(InteractiveRoom[Bed]):
@@ -298,7 +298,7 @@ class Bedroom(InteractiveRoom[Bed]):
 class Kitchen(InteractiveRoom[Food | Fridge | Stove | Dishwasher]):
 
     name: str = "Kitchen"
-    inventory: list[Food]
+    inventory: list[Food] = Field(default_factory=list)
 
     def model_post_init(self, context):
         self.interactables = [
@@ -314,6 +314,7 @@ class Kitchen(InteractiveRoom[Food | Fridge | Stove | Dishwasher]):
 class LaundryRoom(InteractiveRoom[WashingMachine | Dryer]):
     
     name: str = "Laundry Room"
+    inventory: list[Food] = Field(default_factory=list)
 
     def model_post_init(self, context):
         self.interactables = [WashingMachine(), Dryer()]

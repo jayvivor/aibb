@@ -35,7 +35,7 @@ class DefaultTurnType(TurnType):
             DefaultTurnType.OPEN: "Houseguests are permitted to openly mingle.",
             DefaultTurnType.COMP: "Houseguests are competing for a prize.",
             DefaultTurnType.VOTE: "Houseguests are voting to evict.",
-            DefaultTurnType.VOTE: "Houseguests are voting to select a winner.",
+            DefaultTurnType.JURY_VOTE: "Houseguests are voting to select a winner.",
             DefaultTurnType.EVICTION: "Houseguests are saying their goodbyes to the evicted houseguest.",
             DefaultTurnType.NOMINATION: "Houseguests are nominating for eviction.",
             DefaultTurnType.VETO: "Houseguests are attending the veto meeting.",

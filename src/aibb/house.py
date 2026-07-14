@@ -1,3 +1,5 @@
+from pydantic import Field
+
 from aibb.base import House
 from aibb.houseguest import DefaultHouseguest
 from aibb.room import InteractiveRoom
@@ -13,6 +15,8 @@ __all__ = [
 
 
 class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek]):
+
+    room_layout: dict[InteractiveRoom, list[InteractiveRoom]] = Field(default_factory=dict)
     
     def describe(self):
         description = f'''

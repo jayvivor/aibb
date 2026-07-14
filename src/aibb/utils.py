@@ -13,4 +13,4 @@ def listed(items: Sequence):
         start, tail = items[:-2], items[-2:]
         start_str = ", ".join(str(i) for i in start)
         tail_str = " and ".join(str(i) for i in tail)
-        return f"{start_str} {tail_str}"
+        return f"{start_str}, {tail_str}"

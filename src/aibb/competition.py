@@ -1,7 +1,7 @@
 import random
 
 from aibb.base import Competition, CompRuleset, CompResults
-from aibb.utils import *
+from aibb import utils
 
 
 class DefaultCompResults(CompResults):
@@ -25,6 +25,6 @@ class DefaultCompetition(Competition):
     def describe(self):
         return f'''
         Rules: {self.ruleset.describe()}
-        Players: {listed([c.name for c in self.competitors])}
+        Players: {utils.listed([c.name for c in self.competitors])}
         Results: {self.results.describe() if self.results else 'TBD'}
         '''

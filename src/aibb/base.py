@@ -22,7 +22,7 @@ SV = TypeVar("SV", bound=StatusValue)
 
 
 class Base(BaseModel, ABC):
-    hash_id: UUID = Field(default_factory=uuid4)
+    hash_id: UUID = Field(default_factory=uuid4, exclude=True)
 
     def __hash__(self):
         return self.hash_id.int
@@ -63,7 +63,6 @@ HG = TypeVar("HG", bound=Houseguest)
 
 class Room(Base):
     name: str
-    doors: list[Room] = Field(default_factory=list)
     members: list[Houseguest] = Field(default_factory=list)
 
 R = TypeVar("R", bound=Room)
