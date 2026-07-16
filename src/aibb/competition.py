@@ -1,6 +1,7 @@
 import random
 
 from aibb.base import Competition, CompRuleset, CompResults
+from aibb.houseguest import DefaultHouseguest
 from aibb import utils
 
 
@@ -20,7 +21,7 @@ class RandomCompRuleset(CompRuleset):
         return "A randomly-selected houseguest wins."
 
 
-class DefaultCompetition(Competition):
+class DefaultCompetition(Competition[DefaultHouseguest]):
 
     def describe(self):
         return f'''

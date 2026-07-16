@@ -61,9 +61,13 @@ class Houseguest(Base, Generic[M, S]):
 HG = TypeVar("HG", bound=Houseguest)
 
 
-class Room(Base):
+
+
+
+
+class Room(Base, Generic[HG]):
     name: str
-    members: list[Houseguest] = Field(default_factory=list)
+    members: list[HG] = Field(default_factory=list)
 
 R = TypeVar("R", bound=Room)
 
@@ -71,18 +75,22 @@ R = TypeVar("R", bound=Room)
 class Move(Base, ABC, Generic[HG]):  # What an HG does in a given turn
     actor: HG
 
+MV = TypeVar("MV", bound=Move)
 
-class Turn(Base):  # A unit of time in the house
-    moves: list[Move] = Field(default_factory=list)
+
+class Turn(Base, ABC, Generic[MV]):  # A unit of time in the house
+    moves: list[MV] = Field(default_factory=list)
     turn_type: TurnType
 
     def describe(self):
         raise NotImplementedError
 
+T = TypeVar("T", bound=Turn)
 
-class Phase(Base):
+
+class Phase(Base, Generic[T]):
     name: str
-    turns: list[Turn] = Field(default_factory=list)
+    turns: list[T] = Field(default_factory=list)
 
 P = TypeVar("P", bound=Phase)
 
@@ -94,8 +102,8 @@ class Week(Base, Generic[P]):
 W = TypeVar("W", bound=Week)
 
 
-class House(Base, ABC, Generic[HG, R, W]):
-
+class House(Base, ABC, Generic[HG, R, W, T]):
+    name: str
     cast: list[HG]
     rooms: list[R]
     schedule: list[W]
@@ -106,11 +114,36 @@ class House(Base, ABC, Generic[HG, R, W]):
         for room in self.rooms:
             all_hgs.update(member for member in room.members)
         return all_hgs
-
+    
     @abstractmethod
-    def get_hg_turn(self, turn: Turn, hg: HG) -> Move:
+    def evict(self, hg: HG):
         ...
 
+    @abstractmethod
+    def get_hg_move(self, turn: T, hg: HG) -> Move:
+        ...
+
+    def run_turn(self, turn: T) -> T:
+        moves = [self.get_hg_move(turn, hg) for hg in self.get_active_hgs()]
+        turn.moves = moves
+        return turn
+    
+    def run_phase(self, phase: Phase, pool: list[Houseguest]) -> Phase:
+        turns = [self.run_turn(turn=turn) for turn in phase.turns]
+        phase.turns = turns
+        return phase
+    
+    def run_week(self, week: Week, pool: list[Houseguest]) -> Week:
+        phases = [self.run_phase(phase=phase, pool=pool) for phase in week.schedule]
+        week.schedule = phases
+        return week
+    
+    def run(self):
+        print("Running weeks...")
+        for week in self.schedule:
+            print(f"*Week {week.name}*")
+            self.run_week(week, list(self.get_active_hgs()))
+        print("Complete.")
 
 
 class Audience(Base, ABC):
@@ -135,19 +168,36 @@ class CompResults(Base):
     winner: Houseguest
 
 
-class CompRuleset(Base, ABC):
+class CompRuleset(Base, ABC, Generic[HG]):
 
     @abstractmethod
-    def run_comp(self, pool: list[Houseguest]) -> CompResults:
+    def run_comp(self, pool: list[HG]) -> CompResults:
         ...
 
 
-class Competition(Base, ABC):
+class Competition(Base, ABC, Generic[HG]):
     ruleset: CompRuleset
-    competitors: list[Houseguest]
+    competitors: list[HG]
     results: Optional[CompResults] = None
 
     
-    def run_comp(self):
+    def run_comp(self) -> CompResults:
         results = self.ruleset.run_comp(self.competitors)
         self.results = results
+        return results
+    
+
+# Timestamps
+class Timestamp(Base):
+    index: int
+
+    def __sub__(self, other: Self):
+        return self.index - other.index
+
+
+class GameEvent(Base, ABC):
+    timestamp: Timestamp
+
+    @abstractmethod
+    def narrate(self, hg) -> str:
+        ...
