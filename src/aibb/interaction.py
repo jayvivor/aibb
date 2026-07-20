@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import TypeVar, Generic, get_args
+from typing import TypeVar, Generic, ClassVar, get_args
 from abc import ABC
 from pydantic import Field
 
@@ -38,6 +38,7 @@ class Interactable(Base, ABC, Generic[A]):
                 f"{type(self).__name__} must inherit from Interactable[SomeAction], "
                 "not bare Interactable"
             )
+        return super().model_post_init(context)
 
     def interact(self, actor: Houseguest, action: A):
         pass

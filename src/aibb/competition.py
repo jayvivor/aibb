@@ -5,13 +5,13 @@ from aibb.houseguest import DefaultHouseguest
 from aibb import utils
 
 
-class DefaultCompResults(CompResults):
+class DefaultCompResults(CompResults[DefaultHouseguest]):
 
     def describe(self):
         return f"{self.winner.name} has won!"
 
 
-class RandomCompRuleset(CompRuleset):
+class RandomCompRuleset(CompRuleset[DefaultHouseguest, DefaultCompResults]):
     
     def run_comp(self, pool):
         winner = random.choice(pool)
@@ -21,7 +21,7 @@ class RandomCompRuleset(CompRuleset):
         return "A randomly-selected houseguest wins."
 
 
-class DefaultCompetition(Competition[DefaultHouseguest]):
+class DefaultCompetition(Competition[DefaultHouseguest, DefaultCompResults]):
 
     def describe(self):
         return f'''

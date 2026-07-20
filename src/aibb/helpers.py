@@ -29,6 +29,27 @@ DEFAULT_CAST = [
     ]
 ]
 
+DUMMY_CAST = [
+    aibb.core.DummyHouseguest(
+        name=name,
+        model_id="N/A",
+    )
+    for name in [
+        "Alice",
+        "Bob",
+        "Charlie",
+        "Diane",
+        "Edward",
+        "Freya",
+        "Georgia",
+        "Harley",
+        "Irene",
+        "Josh",
+        "Kayla",
+        "Lando",
+    ]
+]
+
 DEFAULT_FRIDGE_INVENTORY = [
     Food(name="Gallon of Milk", quantity=2),
     Food(name="Block of Cheese", quantity=2),
@@ -79,7 +100,7 @@ def get_default_schedule(cast_size: int = len(DEFAULT_CAST)) -> list[aibb.core.D
 
 
 
-def get_default_house():
+def get_default_house(cast=DEFAULT_CAST):
 
     living_room = aibb.core.LivingRoom()
     kitchen = aibb.core.Kitchen(
@@ -93,6 +114,7 @@ def get_default_house():
     shower_room = aibb.core.ShowerRoom()
     stairs = InteractiveRoom(name="stairs")
     hallway = InteractiveRoom(name="hallway")
+    diary_room = aibb.core.DiaryRoom()
 
     bedrooms = [
         aibb.core.Bedroom(name="Lion Bedroom", num_beds=4),
@@ -109,6 +131,8 @@ def get_default_house():
         hallway: [living_room, shower_room] + [bedroom for bedroom in bedrooms],
         shower_room: [hallway],
         backyard: [living_room],
+        laundry_room: [kitchen],
+        diary_room: [],
     }
 
     room_layout.update({bedroom: [hallway] for bedroom in bedrooms})
@@ -122,10 +146,11 @@ def get_default_house():
         hallway,
         laundry_room,
         shower_room,
+        diary_room,
     ] + bedrooms
 
     house = aibb.core.DefaultHouse(
-        cast=DEFAULT_CAST,
+        cast=cast,
         rooms=rooms,
         room_layout=room_layout,
         schedule=get_default_schedule(),

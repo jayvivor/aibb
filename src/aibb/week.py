@@ -1,14 +1,12 @@
+from __future__ import annotations
 from pydantic import Field
-from typing import TypeVar, Generic
+from typing import ClassVar
 
-from aibb.base import Week, Phase, TurnType, CompRuleset
-from aibb.base import Role
-from aibb.houseguest import DefaultRole, DefaultHouseguest
-from aibb.turn import DefaultTurn, OpenTurn, CompTurn, EvictionVoteTurn, SchemeTurn
+from aibb.base import Week, Phase, CompRuleset
+from aibb.houseguest import DefaultRole
 
 
 __all__ = [
-    # "DefaultTurnType",
     "OpenPhase",
     "CompPhase",
     "SleepPhase",
@@ -19,125 +17,39 @@ __all__ = [
 ]
 
 
+class DefaultPhase(Phase):
 
-# class DefaultTurnType(TurnType):
-#     SCHEME = "Scheme"
-#     OPEN = "Open"
-#     COMP = "Comp"
-#     VOTE = "Vote"
-#     EVICTION = "Eviction"
-#     NOMINATION = "Nomination"
-#     VETO = "Veto"
-#     JURY_VOTE = "Jury Vote"
-
-#     @property
-#     def description(self):
-#         mapping = {
-#             DefaultTurnType.SCHEME: "Houseguests make and review plans for future rounds.",
-#             DefaultTurnType.OPEN: "Houseguests are permitted to openly mingle.",
-#             DefaultTurnType.COMP: "Houseguests are competing for a prize.",
-#             DefaultTurnType.VOTE: "Houseguests are voting to evict.",
-#             DefaultTurnType.JURY_VOTE: "Houseguests are voting to select a winner.",
-#             DefaultTurnType.EVICTION: "Houseguests are saying their goodbyes to the evicted houseguest.",
-#             DefaultTurnType.NOMINATION: "Houseguests are nominating for eviction.",
-#             DefaultTurnType.VETO: "Houseguests are attending the veto meeting.",
-#         }
-#         return mapping[self]
-
-
-# class DefaultPhase(Phase):
-#     turn_type: DefaultTurnType
-
-#     def describe(self):
-#         return self.turn_type.description
-
-
-# class OpenPhase(DefaultPhase):
-#     name: str = "Open"
-#     turn_type: DefaultTurnType = DefaultTurnType.OPEN
-#     num_turns: int
-
-#     def describe(self):
-#         return f'''{self.turn_type.description} ({self.num_turns} turns)'''
-    
-# class CompPhase(DefaultPhase):
-#     turn_type: DefaultTurnType = DefaultTurnType.COMP
-#     comp_ruleset: CompRuleset
-#     prize: Role
-
-#     def describe(self):
-#         return f"{self.turn_type.description} (Prize: {self.prize.value})"
-    
-
-# class SleepPhase(DefaultPhase):
-#     name: str = "End of Day"
-#     turn_type: DefaultTurnType = DefaultTurnType.SCHEME
-
-
-# class CeremonyPhase(DefaultPhase):
-#     name: str = "Ceremony"
-
-
-
-# TODO: Era-specific expansions
-# class EraWeek(Week):
-#     pass
-
-# EW = TypeVar("EW", bound=EraWeek)
-
-
-# class MidEraWeek(EraWeek):
-#     hoh_comp: CompRuleset
-#     veto_comp: 
-
-
-# class DoubleEvictionWeek(Week):
-#     hoh_comp: CompRuleset
-#     veto_comp: 
-
-DT = TypeVar("DT", bound=DefaultTurn)
-
-
-class DefaultPhase(Generic[DT], Phase[DT]):
+    info: ClassVar[str]
 
     def describe(self):
         raise NotImplementedError
-    
-    @property
-    def info(self):
-        raise NotImplementedError
-
 
 OPEN_PHASE_INFO = '''
 This is the "Open" Phase. You are free to explore and converse with other houseguests.
 '''
 
-class OpenPhase(DefaultPhase[OpenTurn]):
+class OpenPhase(DefaultPhase):
     name: str = "Open"
     num_turns: int
+    info: ClassVar[str] = OPEN_PHASE_INFO
 
     def describe(self):
         return f'''Open phase ({self.num_turns} turns)'''
-    
-    @property
-    def info(self):
-        return OPEN_PHASE_INFO
 
 
 COMP_PHASE_INFO = '''
 This is the "Competition" phase. You are competing for a prize.
 '''
     
-class CompPhase(DefaultPhase[CompTurn]):
+class CompPhase(DefaultPhase):
     comp_ruleset: CompRuleset
-    prize: Role
+    prize: DefaultRole
+    allowed_roles: list[DefaultRole]
+    disallowed_roles: list[DefaultRole] = Field(default_factory=list)
+    info: ClassVar[str] = COMP_PHASE_INFO
 
     def describe(self):
         return f"Comp phase (Prize: {self.prize.value})"
-    
-    @property
-    def info(self):
-        return COMP_PHASE_INFO
     
 
 SLEEP_PHASE_INFO = '''
@@ -145,47 +57,58 @@ The house is "asleep". You will all "wake" at the same time.
 '''
   
 
-class SleepPhase(DefaultPhase[SchemeTurn]):
+class SleepPhase(DefaultPhase):
     name: str = "End of Day"
-
-    @property
-    def info(self):
-        return SLEEP_PHASE_INFO
+    info: ClassVar[str] = SLEEP_PHASE_INFO
 
 
 CEREMONY_PHASE_INFO = '''
 This is a "Ceremony" phase.
 '''
 
-class CeremonyPhase(Generic[DT], DefaultPhase[DT]):
+class CeremonyPhase(DefaultPhase):
     name: str = "Ceremony"
+    info: ClassVar[str] = CEREMONY_PHASE_INFO
 
-    @property
-    def info(self):
-        return CEREMONY_PHASE_INFO   
+
+NOMINATION_PHASE_INFO = '''
+This is a "Nomination" Phase.
+'''
+
+class NominationPhase(CeremonyPhase):
+    name: str = "Nomination Ceremony"
+    info: ClassVar[str] = NOMINATION_PHASE_INFO
+
+
+VETO_PHASE_INFO = '''
+This is a "Veto" Phase.
+'''
+
+class VetoPhase(CeremonyPhase):
+    name: str = "Veto Ceremony"
+    info: ClassVar[str] = VETO_PHASE_INFO
 
 
 EVICTION_PHASE_INFO = '''
 This is an "Eviction" Phase.
 '''
 
-class EvictionVotePhase(CeremonyPhase[EvictionVoteTurn]):
+class EvictionVotePhase(CeremonyPhase):
     name: str = "Live Vote and Eviction"
-    nominees: list[DefaultHouseguest] = Field(default_factory=list)
-    voters: list[DefaultHouseguest] = Field(default_factory=list)
-    tiebreakers: list[DefaultHouseguest] = Field(default_factory=list)
-
-    @property
-    def info(self):  # type: ignore
-        return EVICTION_PHASE_INFO
+    info: ClassVar[str] = EVICTION_PHASE_INFO
 
 
+DEFAULT_WEEK_INFO = '''
+A Standard Week of Big Brother.
+'''
 
-class DefaultWeek(Week[DefaultPhase]):
+class DefaultWeek(Week[DefaultPhase]): 
+
     schedule: list[DefaultPhase] = Field(default_factory=list)
+    info: ClassVar[str] = DEFAULT_WEEK_INFO
 
     @property
-    def info(self):
+    def schedule_info(self):
         return "\n".join(f" - {phase.name}" for phase in self.schedule)
 
 
@@ -199,6 +122,9 @@ class FinaleWeek(DefaultWeek):
                 name="Final HoH",
                 prize=DefaultRole.HOH,
                 comp_ruleset=self.hoh_comp_ruleset,
+                allowed_roles=[
+                    DefaultRole.ACTIVE,
+                ]
             ),
             CeremonyPhase(
                 name="Final 3 Eviction",
@@ -207,6 +133,7 @@ class FinaleWeek(DefaultWeek):
                 name="Jury Vote",
             )            
         ]
+        return super().model_post_init(context)
 
     def describe(self):
         return f'''
@@ -230,6 +157,12 @@ class StandardWeek(DefaultWeek):
                 name="Head of Household Competition",
                 prize=DefaultRole.HOH,
                 comp_ruleset=self.hoh_comp_ruleset,
+                allowed_roles=[
+                    DefaultRole.ACTIVE,
+                ],
+                disallowed_roles=[
+                    DefaultRole.OUTGOING_HOH,
+                ]
             ),
             OpenPhase(
                 num_turns=self.turns_per_hour*4,
@@ -239,16 +172,22 @@ class StandardWeek(DefaultWeek):
             OpenPhase(
                 num_turns=self.turns_per_hour*2,
             ),
-            CeremonyPhase(
-                name="Nomination Ceremony",
-            ),
+            NominationPhase(),
             OpenPhase(
                 num_turns=self.turns_per_hour*3,
+            ),
+            CeremonyPhase(
+                name="Veto Draw",
             ),
             CompPhase(
                 name="Power of Veto Competition",
                 prize=DefaultRole.POV,
                 comp_ruleset=self.veto_comp_ruleset,
+                allowed_roles=[
+                    DefaultRole.HOH,
+                    DefaultRole.NOMINEE,
+                    DefaultRole.DRAWN_FOR_VETO,
+                ]
             ),
             OpenPhase(
                 num_turns=self.turns_per_hour*9,
@@ -296,6 +235,7 @@ class StandardWeek(DefaultWeek):
                 name="Live Eviction",
             ),
         ]
+        return super().model_post_init(context)
 
     def describe(self):
         return f'''

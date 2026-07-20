@@ -10,9 +10,6 @@ Week Schedule:
 
 Phase:
 {phase_info}
-
-Turn:
-{turn_info}
 '''
 
 

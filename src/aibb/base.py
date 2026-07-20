@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import Optional, Self, Generic, TypeVar
+from typing import Optional, Self, Generic, TypeVar, Self
 from enum import Enum
 from uuid import UUID, uuid4
 from abc import ABC, abstractmethod
@@ -14,6 +14,7 @@ class TurnType(Enum):
 
 class StatusValue(Enum):
     
+
     @property
     def default_value(self) -> Self:
         raise NotImplementedError
@@ -26,13 +27,20 @@ class Base(BaseModel, ABC):
 
     def __hash__(self):
         return self.hash_id.int
+
     
-    @abstractmethod
     def describe(self) -> str:
-        ...
+        raise NotImplementedError
 
     def deepcopy(self) -> Self:
         return self.model_copy(update={"hash_id":uuid4()})
+    
+    @classmethod
+    def get_all_subclasses(cls) -> set[type]:
+        subclasses = set(cls.__subclasses__())
+        for subclass in list(subclasses):
+            subclasses.update(subclass.get_all_subclasses())
+        return subclasses
 
 
 class Memory(Base):
@@ -50,7 +58,7 @@ S = TypeVar("S", bound=Status)
 class Houseguest(Base, Generic[M, S]):
     name: str
     model_id: str
-    roles: list[Role] = Field(default_factory=list)
+    # roles: list[Role] = Field(default_factory=list)
     memory: M
     statuses: list[S]
 
@@ -65,9 +73,8 @@ HG = TypeVar("HG", bound=Houseguest)
 
 
 
-class Room(Base, Generic[HG]):
+class Room(Base):
     name: str
-    members: list[HG] = Field(default_factory=list)
 
 R = TypeVar("R", bound=Room)
 
@@ -109,43 +116,6 @@ class House(Base, ABC, Generic[HG, R, W, T]):
     schedule: list[W]
 
 
-    def get_active_hgs(self) -> set[HG]:
-        all_hgs = set()
-        for room in self.rooms:
-            all_hgs.update(member for member in room.members)
-        return all_hgs
-    
-    @abstractmethod
-    def evict(self, hg: HG):
-        ...
-
-    @abstractmethod
-    def get_hg_move(self, turn: T, hg: HG) -> Move:
-        ...
-
-    def run_turn(self, turn: T) -> T:
-        moves = [self.get_hg_move(turn, hg) for hg in self.get_active_hgs()]
-        turn.moves = moves
-        return turn
-    
-    def run_phase(self, phase: Phase, pool: list[Houseguest]) -> Phase:
-        turns = [self.run_turn(turn=turn) for turn in phase.turns]
-        phase.turns = turns
-        return phase
-    
-    def run_week(self, week: Week, pool: list[Houseguest]) -> Week:
-        phases = [self.run_phase(phase=phase, pool=pool) for phase in week.schedule]
-        week.schedule = phases
-        return week
-    
-    def run(self):
-        print("Running weeks...")
-        for week in self.schedule:
-            print(f"*Week {week.name}*")
-            self.run_week(week, list(self.get_active_hgs()))
-        print("Complete.")
-
-
 class Audience(Base, ABC):
 
     @abstractmethod
@@ -164,24 +134,26 @@ class Message(Base):
         return self.content
 
 
-class CompResults(Base):
-    winner: Houseguest
+class CompResults(Base, Generic[HG]):
+    winner: HG
+
+CR = TypeVar("CR", bound=CompResults)
 
 
-class CompRuleset(Base, ABC, Generic[HG]):
+class CompRuleset(Base, ABC, Generic[HG, CR]):
 
     @abstractmethod
-    def run_comp(self, pool: list[HG]) -> CompResults:
+    def run_comp(self, pool: list[HG]) -> CR:
         ...
 
 
-class Competition(Base, ABC, Generic[HG]):
+class Competition(Base, ABC, Generic[HG, CR]):
     ruleset: CompRuleset
     competitors: list[HG]
-    results: Optional[CompResults] = None
+    results: Optional[CR] = None
 
     
-    def run_comp(self) -> CompResults:
+    def run_comp(self) -> CR:
         results = self.ruleset.run_comp(self.competitors)
         self.results = results
         return results
@@ -200,4 +172,13 @@ class GameEvent(Base, ABC):
 
     @abstractmethod
     def narrate(self, hg) -> str:
+        ...
+
+class MoveResponse(Base, ABC, Generic[HG, MV]):
+
+    selection_id: str
+    actor: HG
+
+    @abstractmethod
+    def get_move(self) -> MV:
         ...

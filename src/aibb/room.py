@@ -2,15 +2,6 @@ from pydantic import Field
 from typing import TypeVar, Generic
 
 from aibb.base import Room
-from aibb.houseguest import DefaultHouseguest
-from aibb.events import (
-    RoomHistory, 
-    JoinRoomEvent, 
-    ExitRoomEvent,
-    SpokenMessage,
-    Interaction,
-    ConversationHistory,
-)
 from aibb.interaction import (
     Interactable,
     Bed,
@@ -36,37 +27,24 @@ __all__ = [
     "Backyard",
     "ShowerRoom",
     "HohRoom",
+    "DiaryRoom",
 ]
+
+
+class NullInteractable(Interactable):
+    pass
 
 I = TypeVar("I", bound=Interactable)
 
+
 # Actual Rooms
 
-class InteractiveRoom(Room[DefaultHouseguest], Generic[I]):
+class InteractiveRoom(Room, Generic[I]):
 
     interactables: list[I] = Field(default_factory=list)
-    history: RoomHistory = Field(default_factory=RoomHistory)
-
-    def add_event(self, event: JoinRoomEvent | ExitRoomEvent | SpokenMessage | Interaction | ConversationHistory):
-        match event:
-            case JoinRoomEvent():
-                self.history.join_history.append(event)
-            case ExitRoomEvent():
-                self.history.exit_history.append(event)
-            case SpokenMessage():
-                self.history.speech_history.append(event)
-            case Interaction():
-                self.history.interaction_history.append(event)
-            case ConversationHistory():
-                self.history.conversation_history.append(event)
-
 
     def describe(self):
-        description = f'''
-        {self.name.upper()}
-        {'\n'.join(i.describe() for i in self.interactables)}
-        '''
-        return description
+        return self.name
 
 
 class Bedroom(InteractiveRoom[Bed]):
@@ -75,6 +53,7 @@ class Bedroom(InteractiveRoom[Bed]):
 
     def model_post_init(self, context):
         self.interactables = [Bed(name=str(index)) for index in range(self.num_beds)]
+        return super().model_post_init(context)
 
 
 class Kitchen(InteractiveRoom[Food | Fridge | Stove | Dishwasher]):
@@ -91,6 +70,7 @@ class Kitchen(InteractiveRoom[Food | Fridge | Stove | Dishwasher]):
             Stove(),
             Dishwasher(),
         ]
+        return super().model_post_init(context)
 
 
 class LaundryRoom(InteractiveRoom[WashingMachine | Dryer]):
@@ -100,6 +80,7 @@ class LaundryRoom(InteractiveRoom[WashingMachine | Dryer]):
 
     def model_post_init(self, context):
         self.interactables = [WashingMachine(), Dryer()]
+        return super().model_post_init(context)
 
 
 class LivingRoom(InteractiveRoom[Couch]):
@@ -108,6 +89,7 @@ class LivingRoom(InteractiveRoom[Couch]):
 
     def model_post_init(self, context):
         self.interactables = [Couch()]
+        return super().model_post_init(context)
 
 
 class Backyard(InteractiveRoom[Pool]):
@@ -116,6 +98,7 @@ class Backyard(InteractiveRoom[Pool]):
 
     def model_post_init(self, context):
         self.interactables = [Pool()]
+        return super().model_post_init(context)
 
 
 class ShowerRoom(InteractiveRoom[Sink | Shower]):
@@ -124,6 +107,7 @@ class ShowerRoom(InteractiveRoom[Sink | Shower]):
 
     def model_post_init(self, context):
         self.interactables = [Sink(), Shower()]
+        return super().model_post_init(context)
 
 
 class HohRoom(InteractiveRoom[Monitor]):
@@ -132,3 +116,9 @@ class HohRoom(InteractiveRoom[Monitor]):
 
     def model_post_init(self, context):
         self.interactables = [Monitor()]
+        return super().model_post_init(context)
+    
+
+class DiaryRoom(InteractiveRoom[NullInteractable]):
+
+    name: str = "Diary Room"
