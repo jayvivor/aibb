@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import Optional, Self, Generic, TypeVar, Self
+from typing import Optional, Self, Generic, TypeVar
 from enum import Enum
 from uuid import UUID, uuid4
 from abc import ABC, abstractmethod

@@ -7,6 +7,7 @@ from aibb.interaction import (
     Bed,
     Food,
     Fridge,
+    Pantry,
     Stove,
     Dishwasher,
     WashingMachine,
@@ -14,7 +15,6 @@ from aibb.interaction import (
     Couch,
     Pool,
     Sink,
-    Dryer,
     Shower,
     Monitor,
 )
@@ -73,13 +73,20 @@ class Kitchen(InteractiveRoom[Food | Fridge | Stove | Dishwasher]):
         return super().model_post_init(context)
 
 
-class LaundryRoom(InteractiveRoom[WashingMachine | Dryer]):
+class LaundryRoom(InteractiveRoom[WashingMachine | Dryer | Pantry]):
     
     name: str = "Laundry Room"
     inventory: list[Food] = Field(default_factory=list)
 
     def model_post_init(self, context):
-        self.interactables = [WashingMachine(), Dryer()]
+        self.interactables = [
+            Pantry(
+                name="Pantry",
+                inventory=[food for food in self.inventory],
+            ),
+            WashingMachine(),
+            Dryer(),
+        ]
         return super().model_post_init(context)
 
 

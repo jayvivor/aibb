@@ -14,6 +14,12 @@ __all__ = [
     "CompPhase",
     "SleepPhase",
     "CeremonyPhase",
+    "NominationPhase",
+    "VetoDrawPhase",
+    "VetoPhase",
+    "EvictionVotePhase",
+    "FinalThreeEvictionPhase",
+    "JuryVotePhase",
     "DefaultWeek",
     "FinaleWeek",
     "StandardWeek",
@@ -32,6 +38,10 @@ class PhaseStatus[PSTT: PhaseStatusTurnType](Base, ABC):
     @classmethod
     def __pydantic_init_subclass__(cls, **kw):
         super().__pydantic_init_subclass__(**kw)
+        # FABLE: The inner enums are declared on the Phase classes as <Phase>TurnType
+        # (e.g. CompPhase.CompTurnType), never as "TurnType" on the Status, so this
+        # lookup always falls back to DefaultTurnType - and turn_types is never read
+        # anywhere. Needs a naming/ownership decision before it can do its job.
         inner = cls.__dict__.get("TurnType") or DefaultTurnType
         if inner:
             if not (isinstance(inner, type) and issubclass(inner, PhaseStatusTurnType)):
@@ -224,12 +234,12 @@ class VetoPhase(CeremonyPhase):
                 return TT.INIT
             if self.saved is None:
                 return TT.VETO_CHOICE
-            if self.saved:
+            if self.saved and not self.replacement:
                 return TT.REPLACEMENT_CHOICE
             return None
         
     def get_status(self):
-        return VetoDrawPhase.Status()
+        return VetoPhase.Status()
 
 
 VETO_DRAW_PHASE_INFO = '''

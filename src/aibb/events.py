@@ -1,5 +1,4 @@
-from pydantic import Field
-from typing import Generic, TypeVar, Optional, Self
+from typing import TypeVar, Optional, Self
 from enum import Enum, auto
 
 from aibb.base import Base, GameEvent, Timestamp
@@ -54,7 +53,7 @@ class DefaultGameEvent(GameEvent):
     def _exclusive_perspective(self, perspective: Perspective, attr: Optional[str]=None):
         attr = attr or perspective.name.lower()
         if len(self.reverse_perspective_map[perspective]) != 1:
-            raise ValueError(f"Not OR more than one {attr}")
+            raise ValueError(f"None or more than one {attr}")
         val = self.reverse_perspective_map[perspective][0]
         return val
     
@@ -235,8 +234,6 @@ HOUSEGUEST_EVENT_TYPES = DefaultGameEvent
 
 # COMP
 
-NUMBER = TypeVar("NUMBER", bound=int | float)
-
 class ExclusiveCrowning(DefaultGameEvent):
     prize: DefaultRole
 
@@ -259,11 +256,16 @@ class DeCrowning(DefaultGameEvent):
 
 
 
-class CompScore(DefaultGameEvent, Generic[NUMBER]):
-    score: NUMBER
-
-class CompScoreboard(Base):
-    scores: list[CompScore]
+# FABLE: Competing design - competition.CompScore (actor + value) is the one
+# CompPhase.Status actually consumes; this event-flavored one is used nowhere.
+# Commented out until the two are reconciled.
+# NUMBER = TypeVar("NUMBER", bound=int | float)
+#
+# class CompScore(DefaultGameEvent, Generic[NUMBER]):
+#     score: NUMBER
+#
+# class CompScoreboard(Base):
+#     scores: list[CompScore]
 
 
 # CEREMONIAL
@@ -295,6 +297,39 @@ class EvictionVoteEvent(DefaultGameEvent):
         return f"({self.timestamp.describe()}): {self.voter.name} votes to evict {self.choice.name}."
     
 
+class JuryVoteEvent(DefaultGameEvent):
+
+    choice: DefaultHouseguest
+
+    @property
+    def voter(self):
+        return self.actor
+
+    def describe(self):
+        return f"({self.timestamp.describe()}): {self.voter.name} votes for {self.choice.name} to win."
+
+
+class JuryResultEvent(DefaultGameEvent):
+    vote_dict: dict[DefaultHouseguest, int]
+
+    @property
+    def winner(self):
+        return self.actor
+
+    def describe(self):
+        return f"({self.timestamp.describe()}): By a vote of {'-'.join([str(i) for i in self.vote_dict.values()])}, {self.winner.name} is the winner of Big Brother."
+
+
+class EvictionEvent(DefaultGameEvent):
+
+    @property
+    def evicted(self):
+        return self._exclusive_perspective(Perspective.ACTOR, attr="evicted")
+
+    def describe(self):
+        return f"({self.timestamp.describe()}): {self.evicted.name} has left the Big Brother house."
+
+
 class NominationEvent(DefaultGameEvent):
 
     @property
@@ -322,10 +357,14 @@ class VetoUseEvent(DefaultGameEvent):
                 description += f"; {self.replacement.name} is named as the replacement."
             else:
                 description += "."
+        else:
+            description += " does not use the veto."
         return description
 
 
 # SPECIAL/META
 
-class EndWeek(DefaultGameEvent):
-    pass
+# FABLE: No emission site or semantics exist - a week's end has no location or
+# perspective_map to fill DefaultGameEvent with. Commented out until it has a shape.
+# class EndWeek(DefaultGameEvent):
+#     pass

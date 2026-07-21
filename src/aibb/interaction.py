@@ -40,8 +40,13 @@ class Interactable(Base, ABC, Generic[A]):
             )
         return super().model_post_init(context)
 
-    def interact(self, actor: Houseguest, action: A):
-        pass
+    # FABLE: No interaction lifecycle exists - nothing ever ends an interaction
+    # (see the commented turn_duration on the Interaction event), so registering
+    # actors into `interactors` here would accumulate forever, and exclusivity
+    # across objects (one HG, one activity) has no home. Commented out until
+    # durations/exclusivity are decided.
+    # def interact(self, actor: Houseguest, action: A):
+    #     pass
 
     def describe(self):
         description = self.name

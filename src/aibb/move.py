@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, ClassVar
+from typing import Generic, TypeVar, ClassVar, Optional
 from pydantic import Field
 
 from aibb.base import Base, Move
@@ -12,6 +12,11 @@ from aibb.week import (
     CompPhase,
     EvictionVotePhase,
     SleepPhase,
+    NominationPhase,
+    VetoPhase,
+    VetoDrawPhase,
+    JuryVotePhase,
+    FinalThreeEvictionPhase,
 )
 from aibb.utils import listed
 '''
@@ -23,6 +28,22 @@ from aibb.utils import listed
 __all__ = [
     "SpeakMove",
     "WhisperMove",
+    "Conversation",
+    "StartConversationMove",
+    "JoinConversationMove",
+    "ExitConversationMove",
+    "ChangeRoomMove",
+    "InteractMove",
+    "SchemeMove",
+    "CompMove",
+    "EffortMove",
+    "NominationMove",
+    "VetoMove",
+    "ReplacementNomineeMove",
+    "VetoDrawChoiceMove",
+    "VoteMove",
+    "EvictionVoteMove",
+    "JuryVoteMove",
 ]
 
 
@@ -36,9 +57,14 @@ class DefaultMove(Move[DefaultHouseguest], ABC):
 DM = TypeVar("DM", bound=DefaultMove)
 
 
-class MoveResponse(Base, ABC, Generic[DM]):
-    explanation: str = Field(description="Your private explanation for the move; nobody else in the game will see this.")
-    move: DM
+# FABLE: Competing response design - response.py builds on base.MoveResponse
+# (selection_id + actor + get_move), which is the shape house.py and the
+# houseguests actually consume. This one embeds the whole Move (full nested
+# Houseguest/Room objects) in the LLM's JSON instead. Commented out until one
+# of the two designs is chosen.
+# class MoveResponse(Base, ABC, Generic[DM]):
+#     explanation: str = Field(description="Your private explanation for the move; nobody else in the game will see this.")
+#     move: DM
 
 
 
@@ -75,9 +101,8 @@ class Conversation(Base):
     #         case WhisperedMessage():
     #             self.history.whisper_history.append(event)
 
-    def describe(self): # TODO
-        # return f"A conversation involving {listed([hg.name for hg in self.history.get_all_members()])}"
-        return f"A conversation."
+    def describe(self):
+        return f"A conversation involving {listed([hg.name for hg in self.active_participants])}."
 
     def is_active(self) -> bool:
         return len(self.active_participants) > 1
@@ -150,11 +175,12 @@ class InteractMove(DefaultMove):
         return self.action.action_description.format(actor=self.actor, object=self.interactable.name)
 
 
-OPEN_MOVES = SpeakMove | WhisperMove | StartConversationMove | JoinConversationMove | ExitConversationMove | ChangeRoomMove |  InteractMove
-
-
-class OpenTurnResponse(MoveResponse[OPEN_MOVES]):
-    pass
+# FABLE: Part of the commented-out embedded-move MoveResponse design above; the
+# live OPEN_MOVES collection is the list in response.py.
+# OPEN_MOVES = SpeakMove | WhisperMove | StartConversationMove | JoinConversationMove | ExitConversationMove | ChangeRoomMove |  InteractMove
+#
+# class OpenTurnResponse(MoveResponse[OPEN_MOVES]):
+#     pass
 
 
 # SCHEME
@@ -162,14 +188,19 @@ class OpenTurnResponse(MoveResponse[OPEN_MOVES]):
 class SchemeMove(DefaultMove):
     updated_memory: DefaultMemory
 
+    VALID_PHASES: ClassVar[list[type[DefaultPhase]]] = [SleepPhase]
     selection_id: ClassVar[str] = "Scheme"
     choice_info: ClassVar[str] = "Update your scratchpad to include anything worth carrying over to future phases."
+
+    def describe(self):
+        return f"{self.actor.name} takes a moment to think."
 
 
 # COMP
 
 class CompMove(DefaultMove):
     
+    VALID_PHASES: ClassVar[list[type[DefaultPhase]]] = [CompPhase]
     selection_id: ClassVar[str] = "Compete"
     choice_info: ClassVar[str] = "Decide how to approach the competition."
 
@@ -180,16 +211,56 @@ class EffortMove(CompMove):
     selection_id: ClassVar[str] = "Choose Effort"
     choice_info: ClassVar[str] = "Decide, from 1 to 100, what percentage of effort you want to put into the competition."
 
+    def describe(self):
+        return f"{self.actor.name} sizes up the competition."
+
 
 # CEREMONIAL
 
 class NominationMove(DefaultMove):
     nominees: list[DefaultHouseguest]
     
+    VALID_PHASES: ClassVar[list[type[DefaultPhase]]] = [NominationPhase]
     selection_id: ClassVar[str] = "Nominate for Eviction"
+    choice_info: ClassVar[str] = "Choose the houseguests you will nominate for eviction."
 
     def describe(self):
         return f"{self.actor.name} has nominated folks for eviction."
+
+
+class VetoMove(DefaultMove):
+    choice: Optional[DefaultHouseguest] = None
+
+    VALID_PHASES: ClassVar[list[type[DefaultPhase]]] = [VetoPhase]
+    selection_id: ClassVar[str] = "Use Veto"
+    choice_info: ClassVar[str] = "Use the Power of Veto to save one of the nominees, or decline to use it."
+
+    def describe(self):
+        if self.choice:
+            return f"{self.actor.name} uses the Power of Veto on {self.choice.name}."
+        return f"{self.actor.name} does not use the Power of Veto."
+
+
+class ReplacementNomineeMove(DefaultMove):
+    choice: DefaultHouseguest
+
+    VALID_PHASES: ClassVar[list[type[DefaultPhase]]] = [VetoPhase]
+    selection_id: ClassVar[str] = "Name Replacement Nominee"
+    choice_info: ClassVar[str] = "Name a replacement nominee for eviction."
+
+    def describe(self):
+        return f"{self.actor.name} names {self.choice.name} as the replacement nominee."
+
+
+class VetoDrawChoiceMove(DefaultMove):
+    choice: DefaultHouseguest
+
+    VALID_PHASES: ClassVar[list[type[DefaultPhase]]] = [VetoDrawPhase]
+    selection_id: ClassVar[str] = "Houseguest's Choice"
+    choice_info: ClassVar[str] = "Choose any eligible houseguest to play in the Veto competition."
+
+    def describe(self):
+        return f"{self.actor.name} chooses {self.choice.name} to play in the Veto competition."
 
 
 
@@ -203,7 +274,9 @@ class VoteMove(DefaultMove):
 class EvictionVoteMove(VoteMove):
     is_tiebreaker: bool = False
 
+    VALID_PHASES: ClassVar[list[type[DefaultPhase]]] = [EvictionVotePhase, FinalThreeEvictionPhase]
     selection_id: ClassVar[str] = "Vote to Evict"
+    choice_info: ClassVar[str] = "Vote to evict one of the nominees."
 
     def describe(self):
         return f"{self.actor.name} votes to evict {self.choice.name}"
@@ -211,7 +284,9 @@ class EvictionVoteMove(VoteMove):
 
 class JuryVoteMove(VoteMove):
 
+    VALID_PHASES: ClassVar[list[type[DefaultPhase]]] = [JuryVotePhase]
     selection_id: ClassVar[str] = "Vote for Winner"
+    choice_info: ClassVar[str] = "Vote for the houseguest you want to win the game."
 
     def describe(self):
         return f"{self.actor.name} votes for {self.choice.name}"
@@ -240,8 +315,3 @@ class JuryVoteMove(VoteMove):
 #     @property
 #     def info(self) -> str:
 #         "\n".join(f"{sc.selection_id}" for sc in self.selection_classes)
-
-
-
-
-

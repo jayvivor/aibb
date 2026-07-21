@@ -29,6 +29,7 @@ class DefaultRole(Role):
     DRAWN_FOR_VETO = "Drawn for Veto"
     OUTGOING_HOH = "Outgoing HOH"
     ACTIVE = "Active"
+    WINNER = "Winner"
 
 
 class DefaultMemory(Memory):
@@ -83,7 +84,8 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
         with client:
             for _attempt in range(self.max_attempts):
                     try:
-                        res = client.chat.send(messages=messages)  # type: ignore
+                        # FABLE: assumed the SDK kwarg is `model`; verify against the openrouter client
+                        res = client.chat.send(model=self.model_id, messages=messages)  # type: ignore
                         content = res.choices[0].message.content or ""
                     except Exception as e:  # network / provider / rate-limit
                         last_error = e
@@ -122,7 +124,7 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
                 f"Houseguest {self.name}: failed after {self.max_attempts} attempts"
             ) from last_error
         
-    def get_move[R: DefaultMove](self, prompt: str, user_message: str, response_type: type[R]) -> R:
+    def get_move[R: MoveResponse](self, prompt: str, user_message: str, response_type: type[R]) -> R:
         return self.get_chat_response(prompt, user_message, response_type)
 
 
@@ -134,4 +136,3 @@ class DummyHouseguest(DefaultHouseguest):
             selection_id="Dummy",
             actor=self,
         )
-        
