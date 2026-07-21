@@ -1,5 +1,5 @@
 from pydantic import Field
-from typing import Generic, TypeVar, Optional
+from typing import Generic, TypeVar, Optional, Self
 from enum import Enum, auto
 
 from aibb.base import Base, GameEvent, Timestamp
@@ -12,10 +12,25 @@ from aibb.move import Conversation
 
 class DefaultTimestamp(Timestamp):
     week_number: int
+    phase_number: int
     turn_number: int
     
     def describe(self):
         return f"Week {self.week_number}, Turn {self.turn_number}"
+    
+    def __gt__(self, other: Self):
+        if self.week_number == other.week_number:
+            if self.phase_number == other.phase_number:
+                return self.turn_number > other.turn_number
+            return self.phase_number > other.phase_number
+        return self.week_number > other.week_number
+    
+    def __eq__(self, other):
+        if not isinstance(other, DefaultTimestamp):
+            return NotImplemented
+        return self.week_number == other.week_number and \
+            self.phase_number == other.phase_number and \
+            self.turn_number == other.turn_number
 
 
 class NullTimestamp(Timestamp):
@@ -89,16 +104,10 @@ class DefaultGameEvent(GameEvent):
 
     def narrate(self, hg: DefaultHouseguest):
         return self.describe().replace(hg.name, 'You')
-    
-# DGE = TypeVar("DGE", bound=DefaultGameEvent)
 
 
 type Observer = Base
 O = TypeVar("O", bound=Observer)
-
-# class History(Base, Generic[O]):
-#     event_dict: dict[Timestamp, list[DefaultGameEvent]]
-
 
 
 # SOCIAL
@@ -178,25 +187,6 @@ class EndConvoEvent(DefaultGameEvent):
         return f"({self.timestamp.describe()}): The conversation ends."
 
 
-# class ConversationHistory(DefaultGameEvent):
-#     join_history: list[JoinConvoEvent] = Field(default_factory=list)
-#     exit_history: list[ExitConvoEvent] = Field(default_factory=list)
-#     speech_history: list[SpokenMessage] = Field(default_factory=list)
-#     whisper_history: list[WhisperedMessage] = Field(default_factory=list)
-#     turn_duration: int = 0
-
-#     def get_all_members(self) -> set[DefaultHouseguest]:
-#         all_members: set[DefaultHouseguest] = set()
-#         for event in self.join_history + self.exit_history:
-#             all_members.add(event.hg)
-#         return all_members
-
-#     def describe(self):
-#         return f"({self.timestamp.describe()}): A conversation involving {listed([hg.name for hg in self.get_all_members()])} for {self.turn_duration} turns."
-    
-
-
-
 # ROOM
 
 class Interaction(DefaultGameEvent):
@@ -241,20 +231,6 @@ class ExitRoomEvent(DefaultGameEvent):
 ROOM_EVENT_TYPES = Interaction | JoinRoomEvent | ExitRoomEvent
 # HOUSEGUEST_EVENT_TYPES = as_union(DefaultGameEvent.get_all_subclasses())
 HOUSEGUEST_EVENT_TYPES = DefaultGameEvent
-
-
-
-
-
-
-# class RoomHistory(DefaultGameEvent):
-#     timestamp: Timestamp = Field(default_factory=NullTimestamp)
-#     join_history: list[JoinRoomEvent] = Field(default_factory=list)
-#     exit_history: list[ExitRoomEvent] = Field(default_factory=list)
-#     speech_history: list[SpokenMessage] = Field(default_factory=list)
-#     interaction_history: list[Interaction] = Field(default_factory=list)
-#     conversation_history: list[ConversationHistory] = Field(default_factory=list)
-
 
 
 # COMP

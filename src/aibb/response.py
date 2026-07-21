@@ -53,11 +53,8 @@ class EvictionVoteMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [EvictionVoteMove]
 
     # TODO: This is a placeholder; should actually discern move type etc.
-    def get_move(self):
-        return EvictionVoteMove(
-            actor=self.actor,
-            choice=self.actor,
-        )
+    def get_move(self) -> EvictionVoteMove:
+        ...
     
 
 class SchemeMoveResponse(DefaultMoveResponse):
@@ -65,20 +62,20 @@ class SchemeMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [SchemeMove]
 
     # TODO: This is a placeholder; should actually discern move type etc.
-    def get_move(self):
-        return SpeakMove(
-            actor=self.actor,
-            content="Howdy, World!",
-        )
+    def get_move(self) -> SchemeMove:
+        ...
     
 
 class NominationMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [NominationMove]
 
+    nominee_names: list[str]
+
     # TODO: This is a placeholder; should actually discern move type etc.
-    def get_move(self):
-        return SpeakMove(
-            actor=self.actor,
-            content="Howdy, World!",
-        )
+    def get_move(self) -> NominationMove:
+        ...
+        # return NominationMove(
+        #     actor=self.actor,
+        #     nominees=
+        # )

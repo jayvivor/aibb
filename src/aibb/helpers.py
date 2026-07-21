@@ -6,6 +6,7 @@ from aibb.base import Base
 from aibb.room import InteractiveRoom, Food
 
 
+
 DEFAULT_COMP_RULESET = aibb.core.RandomCompRuleset()
 
 DEFAULT_CAST = [

@@ -1,0 +1,97 @@
+cast:
+  - name: Fable
+    model_id: anthropic/claude-fable-5
+    reasoning: true
+    provider_id: google-vertex/global
+    tps: 54
+    ttft: 3.9
+  - name: Sol
+    model_id: openai/gpt-5.6-sol
+    reasoning: true
+    provider_id: azure
+    tps: 51
+    ttft: 4.96
+  - name: Kimi
+    model_id: moonshotai/kimi-k3
+    reasoning: true
+    provider_id: moonshotai/int4
+    tps: 27
+    ttft: 4.43
+  - name: Sonnet
+    model_id: anthropic/claude-sonnet-5
+    reasoning: true
+    provider_id: google-vertex/global
+    ttft: 2.59
+    tps: 72
+  - name: GLM
+    model_id: z-ai/glm-5.2
+    reasoning: true
+    provider_id: wafer/fast
+    ttft: 1.44
+    tps: 117
+  - name: Grok
+    model_id: x-ai/grok-4.5
+    reasoning: true
+    provider_id: xai/zdr
+    ttft: 0.95
+    tps: 62
+  - name: Muse
+    model_id: meta/muse-spark-1.1
+    reasoning: true
+    provider_id: meta
+    ttft: 7.21
+    tps: 105
+  - name: Qwen
+    model_id: qwen/qwen3.6-35b-a3b
+    reasoning: true
+    provider_id: dekallm
+    ttft: 0.63
+    tps: 319
+  - name: GeminiPro
+    model_id: google/gemini-3.1-pro-preview
+    reasoning: true
+    provider_id: google-vertex/global
+    ttft: 2.99
+    tps: 95
+  - name: GeminiFlash
+    model_id: google/gemini-3.5-flash
+    reasoning: true
+    provider_id: google-vertex/global
+    ttft: 1.12
+    tps: 64
+  - name: DeepSeek
+    model_id: deepseek/deepseek-v4-pro
+    reasoning: true
+    provider_id: baseten/fp4
+    ttft: 0.84
+    tps: 98
+  - name: Minimax
+    model_id: minimax/minimax-m3
+    reasoning: true
+    provider_id: venice/fp8
+    ttft: 1.82
+    tps: 100
+  - name: Mimo
+    model_id: xiaomi/mimo-v2.5-pro
+    reasoning: true
+    provider_id: digitalocean
+    ttft: 1
+    tps: 34
+  - name: Inkling
+    model_id: thinkingmachines/inkling
+    reasoning: true
+    provider_id: together
+    ttft: 1.08
+    tps: 37
+  - name: Gemma
+    model_id: google/gemma-4-31b-it
+    reasoning: true
+    provider_id: modelrun/fp4
+    ttft: 0.37
+    tps: 49
+  - name: Nemotron
+    model_id: nvidia/nemotron-3-ultra-550b-a55b
+    reasoning: true
+    provider_id: baseten/fp4
+    ttft: 0.4
+    tps: 240

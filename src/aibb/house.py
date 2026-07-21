@@ -15,6 +15,11 @@ from aibb.week import (
     SleepPhase,
     NominationPhase,
     CeremonyPhase,
+    VetoPhase,
+    JuryVotePhase,
+    VetoDrawPhase,
+    FinalThreeEvictionPhase,
+    PhaseStatus,
 )
 from aibb.move import (
     DefaultMove,
@@ -44,6 +49,7 @@ from aibb.events import (
     EndConvoEvent,
     EvictionVoteEvent,
     EvictionResultEvent,
+    NominationEvent,
     Interaction,
     ExclusiveCrowning,
     AdditiveCrowning,
@@ -63,6 +69,9 @@ from aibb.prompts import BASE_PROMPT_TEMPLATE, MESSAGE_TEMPLATE, RULES
 __all__ = [
     "DefaultHouse",
 ]
+
+# TODO: Remove this; used for debugging
+skipped_ceremonies = set()
 
 
 class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, DefaultTurn]):
@@ -189,78 +198,97 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
         self.role_dict.update({DefaultRole.ACTIVE:[hg for hg in self.cast]})
 
 
-    def process_phase(self, phase: DefaultPhase, timestamp: DefaultTimestamp) -> list[DefaultGameEvent]:
+    def process_phase_turn(self, phase: DefaultPhase, timestamp: DefaultTimestamp, status: PhaseStatus) -> list[DefaultGameEvent]:
         
         events = []
 
         match phase:
             case CompPhase():
-                # Create competition
-                disallowed_players = self.filter_cast_by_roles(phase.disallowed_roles)
-                allowed_players = self.filter_cast_by_roles(phase.allowed_roles)
-                competitors = [hg for hg in allowed_players if hg not in disallowed_players]
-                comp = DefaultCompetition(
-                    ruleset=phase.comp_ruleset,
-                    competitors=competitors,
-                )
-
-                # Run competition
-                ## TODO: SHOULD get the effort/stats from each hg first instead, THEN run w/ that context
-                ## For now, it's purely random results anyway
-                results = comp.run_comp()
-
-                # Crown the winner
-                ## Assume every active player gets to see the win
-                perspective_map = {
-                    hg: Perspective.WITNESS
-                    for hg in self.role_dict[DefaultRole.ACTIVE]
-                }
-                perspective_map.update({results.winner:Perspective.ACTOR})
-
-                crown_event = ExclusiveCrowning(
-                            timestamp=timestamp,
-                            location=self.room_registry["Backyard"],
-                            perspective_map=perspective_map,
-                            prize=phase.prize,
+                TT = CompPhase.CompTurnType
+                assert(isinstance(status, CompPhase.Status))
+                match status.get_turn_type():
+                    case TT.INIT:  # TODO; For now, just build the status instance and re-run
+                        disallowed_players = self.filter_cast_by_roles(phase.disallowed_roles)
+                        allowed_players = self.filter_cast_by_roles(phase.allowed_roles)
+                        competitors = [hg for hg in allowed_players if hg not in disallowed_players]
+                        status.players = competitors
+                        return self.process_phase_turn(phase, timestamp, status)
+                    case TT.GET_EFFORTS:
+                        # TODO: Actually make efforts have some effect; for now, just re-run
+                        status.efforts = {hg:100 for hg in status.players}
+                        return self.process_phase_turn(phase, timestamp, status)
+                    case TT.GET_SCORES:
+                
+                        comp = DefaultCompetition(
+                            ruleset=phase.comp_ruleset,
+                            competitors=status.players,
                         )
-            
-                events.append(crown_event)
+                        # Run competition
+                        ## TODO: SHOULD get the effort/stats from each hg first instead, THEN run w/ that context
+                        ## For now, it's purely random results anyway
+                        results = comp.run_comp()
+
+                        # Crown the winner
+                        ## Assume every active player gets to see the win
+                        perspective_map = {
+                            hg: Perspective.WITNESS
+                            for hg in self.role_dict[DefaultRole.ACTIVE]
+                        }
+                        perspective_map.update({results.winner:Perspective.ACTOR})
+
+                        crown_event = ExclusiveCrowning(
+                                    timestamp=timestamp,
+                                    location=self.room_registry["Backyard"],
+                                    perspective_map=perspective_map,
+                                    prize=phase.prize,
+                                )
+                        events.append(crown_event)
+                    case TT.CROWN_WINNER:
+                        # TODO: Do we want HG reactions? Might be useful. For now, etc.
+                        status.winner_crowned = True
+                        return self.process_phase_turn(phase, timestamp, status)
+
             
             case EvictionVotePhase():
-                # Get voters
-                active_players = self.filter_cast_by_roles([DefaultRole.ACTIVE])
-                noms = self.filter_cast_by_roles([DefaultRole.NOMINEE])
-                hoh = self.filter_cast_by_roles([DefaultRole.HOH])
+                TT = EvictionVotePhase.EvictionVoteTurnType
+                # TODO: The asserts need to go. This is just for the linter, for now.
+                assert(isinstance(status, EvictionVotePhase.Status))
+                match status.get_turn_type():
+                    case TT.INIT:
+                        active_players = self.filter_cast_by_roles([DefaultRole.ACTIVE])
+                        noms = self.filter_cast_by_roles([DefaultRole.NOMINEE])
+                        hoh = self.filter_cast_by_roles([DefaultRole.HOH])
 
-                voters = [hg for hg in active_players if hg not in noms + hoh]
-                tiebreaker = [hg for hg in hoh]
-                
-                vote_responses : list[EvictionVoteMoveResponse] = [
-                    hg.get_move(
-                        prompt=self.get_prompt(),
-                        user_message=self.get_user_message(),
-                        response_type=EvictionVoteMoveResponse,
-                    ) for hg in voters
-                ]  # type: ignore
+                        voters = [hg for hg in active_players if hg not in noms + hoh]
+                        status.voters = voters
+                        return self.process_phase_turn(phase, timestamp, status)
+                    case TT.VOTE_NEEDED:
+                        vote_events = []
+                        vote_responses : list[EvictionVoteMoveResponse] = [
+                            hg.get_move(
+                                prompt=self.get_prompt(),
+                                user_message=self.get_user_message(),
+                                response_type=EvictionVoteMoveResponse,
+                            ) for hg in status.voters
+                        ]
+                        vote_moves: list[EvictionVoteMove] = [
+                            response.get_move()
+                            for response in vote_responses
+                        ]
+                        for move in vote_moves:
+                            vote_events.append(EvictionVoteEvent(
+                                timestamp=timestamp,
+                                location=self.room_registry["Diary Room"],
+                                perspective_map={
+                                    move.actor: Perspective.ACTOR,
+                                },
+                                choice=move.choice,
+                            ))
+                        status.vote_tally = {move.actor:move.choice for move in vote_moves}
+                        events.extend(vote_events)
 
-                vote_moves: list[EvictionVoteMove] = [
-                    response.get_move()
-                    for response in vote_responses
-                ]
+                        # Check for ties
 
-                vote_events = []
-                
-                for move in vote_moves:
-                    vote_events.append(EvictionVoteEvent(
-                        timestamp=timestamp,
-                        location=self.room_registry["Diary Room"],
-                        perspective_map={
-                            move.actor: Perspective.ACTOR,
-                        },
-                        choice=move.choice,
-                    ))
-
-                # TODO: Ties n whatnot
 
             case OpenPhase():
                 # The logic:
@@ -518,6 +546,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
 
                         case _:
                             raise ValueError("Somehow, there's a move type in the Open phase that hasn't been covered.")
+            
             case SleepPhase():
                 for hg in self.role_dict[DefaultRole.ACTIVE]:
                     hg.get_move(
@@ -526,14 +555,64 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         response_type=SchemeMoveResponse,
                     )
             case NominationPhase():
-                for hg in self.role_dict[DefaultRole.HOH]:
-                    hg.get_move(
-                        prompt=self.get_prompt(),
-                        user_message=self.get_user_message(),
-                        response_type=NominationMoveResponse,
-                    )
+                TT = NominationPhase.NominationTurnType
+                # TODO: The asserts need to go. This is just for the linter, for now.
+                assert(isinstance(status, NominationPhase.Status))
+                match status.get_turn_type():
+                    case TT.INIT:
+                        hohs = self.role_dict[DefaultRole.HOH]
+                        if len(hohs) != 1:
+                            raise ValueError("Too many HOHs to do a Nomination Ceremony")
+                        status.hoh = hohs[0]
+                        return self.process_phase_turn(phase, timestamp, status)
+                    case TT.GET_NOMINATIONS:
+                        # TODO: There's gotta be a better way to verify
+                        assert(status.hoh)
+                        move = status.hoh.get_move(
+                            prompt=self.get_prompt(),
+                            user_message=self.get_user_message(),
+                            response_type=NominationMoveResponse,
+                        ).get_move()
+                        base_perspective_map = {
+                            hg:Perspective.WITNESS 
+                            for hg in self.role_dict[DefaultRole.ACTIVE]
+                        }
+                        base_perspective_map.update(
+                            {target: Perspective.TARGET 
+                                for target in move.nominees
+                            }
+                        )
+                        base_perspective_map.update({move.actor:Perspective.ACTOR})
+                        nom_event = NominationEvent(
+                            perspective_map=base_perspective_map,
+                            location=self.room_registry["Living Room"],
+                            timestamp=timestamp,
+                        )
+                        events.append(nom_event)
+            case VetoPhase():
+                TT = VetoPhase.VetoTurnType
+                # TODO: The asserts need to go. This is just for the linter, for now.
+                assert(isinstance(status, VetoPhase.Status))
+                match status.get_turn_type():
+                    case TT.INIT:
+                        holders = self.role_dict[DefaultRole.POV]
+                        if len(holders) != 1:
+                            raise ValueError(f"Invalid number of veto holders ({len(holders)})")
+                        status.holder = holders[0]
+                        return self.process_phase_turn(phase, timestamp, status)
+                    case TT.VETO_CHOICE:
+                        ...
+                    case TT.REPLACEMENT_CHOICE:
+                        ...
+            case JuryVotePhase():
+                ...
+            case VetoDrawPhase():
+                ...
+            case FinalThreeEvictionPhase():
+                ...
             case CeremonyPhase():
-                print(f"WARNING: Skipping ceremony '{phase.name}'...")
+                # TODO: Remove this
+                skipped_ceremonies.add(phase.name)
             case _:
                 raise ValueError(f"Phase type '{phase.name}' has not been covered.")
         return events
@@ -551,18 +630,25 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                 print(f"Running Phase '{phase.name}'...")
 
                 index += 1
+                t_ind = 0
+                status = phase.get_status()
 
-                timestamp = DefaultTimestamp(
-                    week_number=w_ind+1,
-                    turn_number=p_ind+1,
-                    index=index,
-                )
+                while status.get_turn_type():
 
-                events = self.process_phase(phase=phase, timestamp=timestamp)
+                    timestamp = DefaultTimestamp(
+                        week_number=w_ind+1,
+                        phase_number=p_ind+1,
+                        turn_number=t_ind+1,
+                        index=index,
+                    )
 
-                # Record and process the events
-                self.history[timestamp] = events
+                    events = self.process_phase_turn(phase=phase, timestamp=timestamp, status=status)
 
-                for event in events:
-                    self.process_event(event)              
+                    # Record and process the events
+                    self.history[timestamp] = events
+
+                    for event in events:
+                        self.process_event(event)   
+                
+        print("\n".join(skipped_ceremonies))
                 

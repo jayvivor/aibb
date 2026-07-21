@@ -122,7 +122,7 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
                 f"Houseguest {self.name}: failed after {self.max_attempts} attempts"
             ) from last_error
         
-    def get_move[R: MoveResponse](self, prompt: str, user_message: str, response_type: type[R]) -> R:
+    def get_move[R: DefaultMove](self, prompt: str, user_message: str, response_type: type[R]) -> R:
         return self.get_chat_response(prompt, user_message, response_type)
 
 

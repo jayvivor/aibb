@@ -37,7 +37,7 @@ DM = TypeVar("DM", bound=DefaultMove)
 
 
 class MoveResponse(Base, ABC, Generic[DM]):
-    diary_room: str = Field(description="Your private explanation of the move; nobody else in the game will see this.")
+    explanation: str = Field(description="Your private explanation for the move; nobody else in the game will see this.")
     move: DM
 
 

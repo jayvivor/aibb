@@ -1,9 +1,12 @@
 from __future__ import annotations
 from pydantic import Field
-from typing import ClassVar
+from typing import ClassVar, Optional
+from abc import ABC, abstractmethod
+from enum import Enum, auto
 
-from aibb.base import Week, Phase, CompRuleset
-from aibb.houseguest import DefaultRole
+from aibb.base import Base, Week, Phase, CompRuleset
+from aibb.houseguest import DefaultRole, DefaultHouseguest
+from aibb.competition import CompScore
 
 
 __all__ = [
@@ -16,13 +19,50 @@ __all__ = [
     "StandardWeek",
 ]
 
+class PhaseStatusTurnType(Enum):
+    pass
 
-class DefaultPhase(Phase):
+class DefaultTurnType(PhaseStatusTurnType):
+    DEFAULT = auto()
+
+class PhaseStatus[PSTT: PhaseStatusTurnType](Base, ABC):
+
+    turn_types: ClassVar[type[PhaseStatusTurnType] | None]
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kw):
+        super().__pydantic_init_subclass__(**kw)
+        inner = cls.__dict__.get("TurnType") or DefaultTurnType
+        if inner:
+            if not (isinstance(inner, type) and issubclass(inner, PhaseStatusTurnType)):
+                raise TypeError(f"{cls.__name__}.TurnType must subclass PhaseStatusTurnType")
+            cls.turn_types = inner
+    
+    @abstractmethod
+    def get_turn_type(self) -> PSTT | None:
+        ...
+
+
+class DefaultPhase(Phase, ABC):
 
     info: ClassVar[str]
+    status_type: ClassVar[type[PhaseStatus] | None] = None
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kw):
+        super().__pydantic_init_subclass__(**kw)
+        if inner := cls.__dict__.get("Status"):
+            if not (isinstance(inner, type) and issubclass(inner, PhaseStatus)):
+                raise TypeError(f"{cls.__name__}.Status must subclass PhaseStatus")
+            cls.status_type = inner
 
     def describe(self):
         raise NotImplementedError
+    
+    @abstractmethod
+    def get_status(self) -> PhaseStatus:
+        ...
+    
 
 OPEN_PHASE_INFO = '''
 This is the "Open" Phase. You are free to explore and converse with other houseguests.
@@ -33,8 +73,21 @@ class OpenPhase(DefaultPhase):
     num_turns: int
     info: ClassVar[str] = OPEN_PHASE_INFO
 
+    class Status(PhaseStatus):
+        turns_run: int = Field(default=0)
+        max_turns: int
+
+        def get_turn_type(self):
+            TT = DefaultTurnType
+            if self.turns_run < self.max_turns:
+                return TT.DEFAULT
+            return None
+
     def describe(self):
         return f'''Open phase ({self.num_turns} turns)'''
+    
+    def get_status(self) -> OpenPhase.Status:
+        return OpenPhase.Status(turns_run=0, max_turns=self.num_turns)
 
 
 COMP_PHASE_INFO = '''
@@ -48,8 +101,38 @@ class CompPhase(DefaultPhase):
     disallowed_roles: list[DefaultRole] = Field(default_factory=list)
     info: ClassVar[str] = COMP_PHASE_INFO
 
+
+    class CompTurnType(PhaseStatusTurnType):
+        INIT = auto()  # TODO: This is a "No API" turn, technically; figure out solution
+        GET_EFFORTS = auto()
+        GET_SCORES = auto()
+        CROWN_WINNER = auto()
+
+
+    class Status(PhaseStatus[CompTurnType]):
+        players: list[DefaultHouseguest] = Field(default_factory=list)
+        efforts: dict[DefaultHouseguest, int] = Field(default_factory=dict)
+        scores: list[CompScore] = Field(default_factory=list)
+        winner_crowned: bool = False
+
+        def get_turn_type(self):
+            TT = CompPhase.CompTurnType
+            if not self.players:
+                return TT.INIT
+            if len(self.players) > len(self.efforts.keys()):
+                return TT.GET_EFFORTS
+            if not len(self.players) == len(self.scores):
+                return TT.GET_SCORES
+            if not self.winner_crowned:
+                return TT.CROWN_WINNER
+            return None
+
+
     def describe(self):
         return f"Comp phase (Prize: {self.prize.value})"
+    
+    def get_status(self):
+        return CompPhase.Status()
     
 
 SLEEP_PHASE_INFO = '''
@@ -60,6 +143,21 @@ The house is "asleep". You will all "wake" at the same time.
 class SleepPhase(DefaultPhase):
     name: str = "End of Day"
     info: ClassVar[str] = SLEEP_PHASE_INFO
+
+
+    class Status(PhaseStatus):
+        schemers: list[DefaultHouseguest] = Field(default_factory=list)
+        scheme_dict: dict[DefaultHouseguest, str] = Field(default_factory=dict)
+
+        def get_turn_type(self):
+            TT = DefaultTurnType
+            if not self.schemers or not self.scheme_dict:
+                return TT.DEFAULT
+            return None
+
+
+    def get_status(self):
+        return SleepPhase.Status()
 
 
 CEREMONY_PHASE_INFO = '''
@@ -80,6 +178,28 @@ class NominationPhase(CeremonyPhase):
     info: ClassVar[str] = NOMINATION_PHASE_INFO
 
 
+    class NominationTurnType(PhaseStatusTurnType):
+        INIT = auto()  # TODO: This is a "No API" turn, technically; figure out solution
+        GET_NOMINATIONS = auto()
+
+
+    class Status(PhaseStatus[NominationTurnType]):
+        hoh: Optional[DefaultHouseguest] = None
+        nominees: list[DefaultHouseguest] = Field(default_factory=list)
+
+        def get_turn_type(self):
+            TT = NominationPhase.NominationTurnType
+            if not self.hoh:
+                return TT.INIT
+            if not self.nominees:
+                return TT.GET_NOMINATIONS
+            return None
+        
+
+    def get_status(self):
+        return NominationPhase.Status()
+
+
 VETO_PHASE_INFO = '''
 This is a "Veto" Phase.
 '''
@@ -88,14 +208,163 @@ class VetoPhase(CeremonyPhase):
     name: str = "Veto Ceremony"
     info: ClassVar[str] = VETO_PHASE_INFO
 
+    class VetoTurnType(PhaseStatusTurnType):
+        INIT = auto()
+        VETO_CHOICE = auto()
+        REPLACEMENT_CHOICE = auto()
+
+    class Status(PhaseStatus[VetoTurnType]):
+        holder: Optional[DefaultHouseguest] = None
+        saved: Optional[DefaultHouseguest | bool] = None
+        replacement: Optional[DefaultHouseguest | bool] = None
+
+        def get_turn_type(self):
+            TT = VetoPhase.VetoTurnType
+            if not self.holder:
+                return TT.INIT
+            if self.saved is None:
+                return TT.VETO_CHOICE
+            if self.saved:
+                return TT.REPLACEMENT_CHOICE
+            return None
+        
+    def get_status(self):
+        return VetoDrawPhase.Status()
+
+
+VETO_DRAW_PHASE_INFO = '''
+This is a "Veto Draw" Phase.
+'''
+
+class VetoDrawPhase(CeremonyPhase):
+    name: str = "Veto Draw Ceremony"
+    info: ClassVar[str] = VETO_DRAW_PHASE_INFO
+
+    class VetoDrawTurnType(PhaseStatusTurnType):
+        INIT = auto()
+        DRAW_NEEDED = auto()
+        HG_CHOICE = auto()
+
+    class Status(PhaseStatus[VetoDrawTurnType]):
+        drawn_dict: dict[DefaultHouseguest, DefaultHouseguest] = Field(default_factory=dict)
+        draws_needed: int = 3
+
+        def get_turn_type(self):
+            TT = VetoDrawPhase.VetoDrawTurnType
+            if not self.drawn_dict:
+                return TT.INIT
+            for drafter, drawn in self.drawn_dict.items():
+                if drafter == drawn:
+                    return TT.HG_CHOICE
+            if len(self.drawn_dict.values()) < self.draws_needed:
+                    return TT.DRAW_NEEDED
+            return None
+        
+    def get_status(self):
+        return VetoDrawPhase.Status()
+
 
 EVICTION_PHASE_INFO = '''
-This is an "Eviction" Phase.
+This is an "Eviction Vote" Phase.
 '''
 
 class EvictionVotePhase(CeremonyPhase):
     name: str = "Live Vote and Eviction"
     info: ClassVar[str] = EVICTION_PHASE_INFO
+
+
+    class EvictionVoteTurnType(PhaseStatusTurnType):
+        INIT = auto()  # TODO: Rename all the inits this
+        VOTE_NEEDED = auto()
+        TIEBREAK_NEEDED = auto()
+
+
+    class Status(PhaseStatus[EvictionVoteTurnType]):
+        voters: list[DefaultHouseguest] = Field(default_factory=list)
+        vote_tally: dict[DefaultHouseguest, DefaultHouseguest] = Field(default_factory=dict)
+        evicted: Optional[DefaultHouseguest] = None
+
+        def get_turn_type(self):
+            TT = EvictionVotePhase.EvictionVoteTurnType
+            if not self.voters:
+                return TT.INIT
+            if not self.vote_tally:
+                return TT.VOTE_NEEDED
+            if not self.evicted:
+                return TT.TIEBREAK_NEEDED
+            return None
+        
+    
+    def get_status(self):
+        return EvictionVotePhase.Status()
+
+
+FINAL_THREE_EVICTION_PHASE_INFO = '''
+This is the Final Eviction Phase.
+'''
+
+class FinalThreeEvictionPhase(CeremonyPhase):
+    name: str = "Final Three Eviction Ceremony"
+    info: ClassVar[str] = FINAL_THREE_EVICTION_PHASE_INFO
+
+    class FinalThreeEvictionTurnType(PhaseStatusTurnType):
+        INIT = auto()  # TODO: Rename all the inits this
+        VOTE_NEEDED = auto()
+        EVICTION = auto()
+
+
+    class Status(PhaseStatus[FinalThreeEvictionTurnType]):
+        voters: list[DefaultHouseguest] = Field(default_factory=list)
+        choice: Optional[DefaultHouseguest] = None
+        evicted: bool = False
+
+        def get_turn_type(self):
+            TT = FinalThreeEvictionPhase.FinalThreeEvictionTurnType
+            if not self.voters:
+                return TT.INIT
+            if not self.choice:
+                return TT.VOTE_NEEDED
+            if not self.evicted:
+                return TT.EVICTION
+            return None
+        
+
+    def get_status(self):
+        return FinalThreeEvictionPhase.Status()
+
+
+JURY_VOTE_PHASE_INFO = '''
+This is a "Jury Vote" Phase.
+'''
+
+class JuryVotePhase(CeremonyPhase):
+    name: str = "Jury Vote Ceremony"
+    info: ClassVar[str] = JURY_VOTE_PHASE_INFO
+
+    class JuryVoteTurnType(PhaseStatusTurnType):
+        INIT = auto()  # TODO: Rename all the inits this
+        VOTE_NEEDED = auto()
+        EVICTION = auto()
+
+
+    class Status(PhaseStatus[JuryVoteTurnType]):
+        voters: list[DefaultHouseguest] = Field(default_factory=list)
+        vote_tally: dict[DefaultHouseguest, DefaultHouseguest] = Field(default_factory=dict)
+        evicted: Optional[DefaultHouseguest] = None
+
+        def get_turn_type(self):
+            TT = JuryVotePhase.JuryVoteTurnType
+            if not self.voters:
+                return TT.INIT
+            if not self.vote_tally:
+                return TT.VOTE_NEEDED
+            if not self.evicted:
+                return TT.EVICTION
+            return None
+        
+    def get_status(self):
+        return JuryVotePhase.Status()
+
 
 
 DEFAULT_WEEK_INFO = '''
@@ -126,12 +395,8 @@ class FinaleWeek(DefaultWeek):
                     DefaultRole.ACTIVE,
                 ]
             ),
-            CeremonyPhase(
-                name="Final 3 Eviction",
-            ),
-            CeremonyPhase(
-                name="Jury Vote",
-            )            
+            FinalThreeEvictionPhase(),
+            JuryVotePhase(),        
         ]
         return super().model_post_init(context)
 
@@ -176,9 +441,7 @@ class StandardWeek(DefaultWeek):
             OpenPhase(
                 num_turns=self.turns_per_hour*3,
             ),
-            CeremonyPhase(
-                name="Veto Draw",
-            ),
+            VetoDrawPhase(),
             CompPhase(
                 name="Power of Veto Competition",
                 prize=DefaultRole.POV,
@@ -207,9 +470,7 @@ class StandardWeek(DefaultWeek):
             OpenPhase(
                 num_turns=self.turns_per_hour*2,
             ),
-            CeremonyPhase(
-                name="Veto Meeting",
-            ),
+            VetoPhase(),
             OpenPhase(
                 num_turns=self.turns_per_hour*13,
             ),
@@ -228,12 +489,7 @@ class StandardWeek(DefaultWeek):
             OpenPhase(
                 num_turns=self.turns_per_hour*7,
             ),
-            EvictionVotePhase(
-                name="Eviction Vote",
-            ),
-            CeremonyPhase(
-                name="Live Eviction",
-            ),
+            EvictionVotePhase(),
         ]
         return super().model_post_init(context)
 

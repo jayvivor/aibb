@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from abc import ABC, abstractmethod
 
 
+
 class Role(Enum):
     pass
 
@@ -13,7 +14,6 @@ class TurnType(Enum):
     pass
 
 class StatusValue(Enum):
-    
 
     @property
     def default_value(self) -> Self:
@@ -65,12 +65,7 @@ class Houseguest(Base, Generic[M, S]):
     def __hash__(self):
         return super().__hash__()
 
-
 HG = TypeVar("HG", bound=Houseguest)
-
-
-
-
 
 
 class Room(Base):
@@ -152,7 +147,6 @@ class Competition(Base, ABC, Generic[HG, CR]):
     competitors: list[HG]
     results: Optional[CR] = None
 
-    
     def run_comp(self) -> CR:
         results = self.ruleset.run_comp(self.competitors)
         self.results = results
@@ -163,9 +157,6 @@ class Competition(Base, ABC, Generic[HG, CR]):
 class Timestamp(Base):
     index: int
 
-    def __sub__(self, other: Self):
-        return self.index - other.index
-
 
 class GameEvent(Base, ABC):
     timestamp: Timestamp
@@ -173,6 +164,7 @@ class GameEvent(Base, ABC):
     @abstractmethod
     def narrate(self, hg) -> str:
         ...
+
 
 class MoveResponse(Base, ABC, Generic[HG, MV]):
 

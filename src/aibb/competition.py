@@ -1,8 +1,14 @@
 import random
 
-from aibb.base import Competition, CompRuleset, CompResults
+from aibb.base import Base, Competition, CompRuleset, CompResults
 from aibb.houseguest import DefaultHouseguest
 from aibb import utils
+
+
+
+class CompScore(Base):
+    actor: DefaultHouseguest
+    value: int
 
 
 class DefaultCompResults(CompResults[DefaultHouseguest]):
