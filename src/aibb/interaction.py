@@ -45,6 +45,10 @@ class Interactable(Base, ABC, Generic[A]):
     # actors into `interactors` here would accumulate forever, and exclusivity
     # across objects (one HG, one activity) has no home. Commented out until
     # durations/exclusivity are decided.
+    # FIX/IGNORE: This is a planned RPG-adjacent feature; the idea is that the interaction
+    # Actually has consequences eventually, and `interact` is a handler for that.
+    # The temporary fix is to have a `EndInteraction` Move/GameEvent. Ensure it auto-triggers
+    # If a room is left. Otherwise, don't worry about this feature and leave it to me to implement.
     # def interact(self, actor: Houseguest, action: A):
     #     pass
 

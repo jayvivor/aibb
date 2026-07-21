@@ -26,6 +26,7 @@ from aibb.utils import listed
 
 
 __all__ = [
+    "DefaultMove",
     "SpeakMove",
     "WhisperMove",
     "Conversation",
@@ -62,6 +63,7 @@ DM = TypeVar("DM", bound=DefaultMove)
 # houseguests actually consume. This one embeds the whole Move (full nested
 # Houseguest/Room objects) in the LLM's JSON instead. Commented out until one
 # of the two designs is chosen.
+# REMOVE: Keep this explanation str and move it to the `response.py` design. Otherwise, chuck it.
 # class MoveResponse(Base, ABC, Generic[DM]):
 #     explanation: str = Field(description="Your private explanation for the move; nobody else in the game will see this.")
 #     move: DM
@@ -177,6 +179,7 @@ class InteractMove(DefaultMove):
 
 # FABLE: Part of the commented-out embedded-move MoveResponse design above; the
 # live OPEN_MOVES collection is the list in response.py.
+# IGNORE: Keep this, I'll implement it later.
 # OPEN_MOVES = SpeakMove | WhisperMove | StartConversationMove | JoinConversationMove | ExitConversationMove | ChangeRoomMove |  InteractMove
 #
 # class OpenTurnResponse(MoveResponse[OPEN_MOVES]):
@@ -293,6 +296,7 @@ class JuryVoteMove(VoteMove):
     
 
 # # TODO: COLLECT SUBCLASS SELECTION IDs
+# FIX: Figure out how to wire this. Please prioritize readable code over "clean", "pythonic" code.
 
 
 # all_subclasses = []

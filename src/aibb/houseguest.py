@@ -40,7 +40,7 @@ class DefaultMemory(Memory):
 
 
 # TODO: Full-on RPG Mechanics over here
-
+# IGNORE: This will be implemented eventually; explained elsewhere. For now, let it be.
 # class LaundryStatusValue(StatusValue):
 #     CLEAN = "clean"
 #     DIRTY = "dirty"
@@ -85,6 +85,7 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
             for _attempt in range(self.max_attempts):
                     try:
                         # FABLE: assumed the SDK kwarg is `model`; verify against the openrouter client
+                        # RESOLVE: This is correct. No action needed.
                         res = client.chat.send(model=self.model_id, messages=messages)  # type: ignore
                         content = res.choices[0].message.content or ""
                     except Exception as e:  # network / provider / rate-limit

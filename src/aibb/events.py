@@ -227,6 +227,7 @@ class ExitRoomEvent(DefaultGameEvent):
 
 # COLLECTIONS
 # TODO: Registry pattern; ClassVar specifically for the perspectives which should "see" a historical moment
+# IGNORE: For now, leave this alone. I'll get to it, maybe.
 ROOM_EVENT_TYPES = Interaction | JoinRoomEvent | ExitRoomEvent
 # HOUSEGUEST_EVENT_TYPES = as_union(DefaultGameEvent.get_all_subclasses())
 HOUSEGUEST_EVENT_TYPES = DefaultGameEvent
@@ -259,6 +260,7 @@ class DeCrowning(DefaultGameEvent):
 # FABLE: Competing design - competition.CompScore (actor + value) is the one
 # CompPhase.Status actually consumes; this event-flavored one is used nowhere.
 # Commented out until the two are reconciled.
+# IGNORE: Don't remove this comment; I'll implement actual non-random competitions later
 # NUMBER = TypeVar("NUMBER", bound=int | float)
 #
 # class CompScore(DefaultGameEvent, Generic[NUMBER]):
@@ -366,5 +368,8 @@ class VetoUseEvent(DefaultGameEvent):
 
 # FABLE: No emission site or semantics exist - a week's end has no location or
 # perspective_map to fill DefaultGameEvent with. Commented out until it has a shape.
+# FIX: This is intentionally bare, and it's only meant to happen if a week needs to end
+# unexpectedly (ex: 'MedEvac' (an endpoint goes down mid-season)); don't worry about the
+# use cases for now, but handle this in DefaultHouse by resetting the week.
 # class EndWeek(DefaultGameEvent):
 #     pass

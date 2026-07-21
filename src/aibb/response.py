@@ -22,6 +22,20 @@ from aibb.move import (
 )
 
 
+__all__ = [
+    "DefaultMoveResponse",
+    "OpenMoveResponse",
+    "EffortMoveResponse",
+    "EvictionVoteMoveResponse",
+    "JuryVoteMoveResponse",
+    "SchemeMoveResponse",
+    "NominationMoveResponse",
+    "VetoMoveResponse",
+    "ReplacementNomineeMoveResponse",
+    "VetoDrawChoiceMoveResponse",
+]
+
+
 # FABLE: The response layer is schema-only for now; every get_move below is
 # commented out because the dispatch mechanism is undecided:
 #   - selection_id is meant to pick the move type out of valid_move_types, but the
@@ -34,6 +48,15 @@ from aibb.move import (
 #     with no injection step.
 #   - move.py holds a competing (commented-out) design that embeds the whole Move
 #     in the response instead.
+# FIX: Use a ref/registry pattern. Create a per-Base-subclass `Ref` class 
+# (ex: DefaultHouseguest gets its own `class Ref(Ref):` definition), and the house
+# has a registry for resolving refs to their objects. This way, the house "knows" which
+# Refs/literals to pass along to the `get_move` for the hg.
+# Special request for this one - create a `ref_demo.py` SPECIFICALLY for isolating and
+# explaining the ref/registry system that you choose to implement. This has the greatest potential
+# for violating the established style, so I want to fully understand it when reading it.
+# Despite the name, this doesn't actually have to be a _demo_ in the traditional sense; I just
+# need to see the mechanics of it isolated from the rest of the architecture.
 
 
 class DefaultMoveResponse(MoveResponse[DefaultHouseguest, DefaultMove]):
@@ -59,6 +82,7 @@ class OpenMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = OPEN_MOVES
     
     # FABLE: see the module note; the placeholder returned a hardcoded SpeakMove
+    # FIX: See above
     # def get_move(self):
     #     return SpeakMove(
     #         actor=self.actor,
@@ -71,6 +95,7 @@ class EffortMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [EffortMove]
 
     # FABLE: see the module note
+    # FIX: See above
     # def get_move(self) -> EffortMove:
     #     ...
 
@@ -80,6 +105,7 @@ class EvictionVoteMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [EvictionVoteMove]
 
     # FABLE: see the module note
+    # FIX: See above
     # def get_move(self) -> EvictionVoteMove:
     #     ...
     
@@ -89,6 +115,7 @@ class JuryVoteMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [JuryVoteMove]
 
     # FABLE: see the module note
+    # FIX: See above
     # def get_move(self) -> JuryVoteMove:
     #     ...
 
@@ -98,6 +125,7 @@ class SchemeMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [SchemeMove]
 
     # FABLE: see the module note
+    # FIX: See above
     # def get_move(self) -> SchemeMove:
     #     ...
     
@@ -109,6 +137,7 @@ class NominationMoveResponse(DefaultMoveResponse):
     nominee_names: list[str]
 
     # FABLE: see the module note
+    # FIX: See above
     # def get_move(self) -> NominationMove:
     #     ...
     #     # return NominationMove(
@@ -122,6 +151,7 @@ class VetoMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [VetoMove]
 
     # FABLE: see the module note
+    # FIX: See above
     # def get_move(self) -> VetoMove:
     #     ...
 
@@ -131,6 +161,7 @@ class ReplacementNomineeMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [ReplacementNomineeMove]
 
     # FABLE: see the module note
+    # FIX: See above
     # def get_move(self) -> ReplacementNomineeMove:
     #     ...
 
@@ -140,5 +171,6 @@ class VetoDrawChoiceMoveResponse(DefaultMoveResponse):
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [VetoDrawChoiceMove]
 
     # FABLE: see the module note
+    # FIX: See above
     # def get_move(self) -> VetoDrawChoiceMove:
     #     ...

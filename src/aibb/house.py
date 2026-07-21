@@ -80,6 +80,7 @@ __all__ = [
 ]
 
 # TODO: Remove this; used for debugging
+# REMOVE: Yeah remove it
 skipped_ceremonies = set()
 
 
@@ -168,9 +169,16 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
     # the context-passing approach is decided; the prompts.py templates (and RULES)
     # are waiting on the same call. The call sites in process_phase_turn are left
     # in place as the consuming side of the design.
+    # 
+    # FIX: take the week and phase as args for get_prompt, using their `info`.
+    # Update the `info` with strategically neutral but sufficiently descriptive explanations.
+    # 
     # def get_prompt(self) -> str:
     #     ...
     #
+    # FIX: take an hg and move_response.options as args for get_user_message, again using `info`.
+    # Use `choice_info` where appropriate.
+    # 
     # def get_user_message(self) -> str:
     #     ...
 
@@ -242,7 +250,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
 
         match phase:
             case CompPhase():
-                TT = CompPhase.CompTurnType
+                TT = CompPhase.TurnType
                 assert(isinstance(status, CompPhase.Status))
                 match status.get_turn_type():
                     case TT.INIT:  # TODO; For now, just build the status instance and re-run
@@ -253,6 +261,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         return self.process_phase_turn(phase, timestamp, status)
                     case TT.GET_EFFORTS:
                         # TODO: Actually make efforts have some effect
+                        # IGNORE: effort should be cosmetic for now; comps are purely random
                         effort_moves = [
                             hg.get_move(
                                 prompt=self.get_prompt(),
@@ -270,6 +279,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         # Run competition
                         ## TODO: SHOULD get the effort/stats from each hg first instead, THEN run w/ that context
                         ## For now, it's purely random results anyway
+                        ## IGNORE: yeah ignore it
                         results = comp.run_comp()
 
                         # Crown the winner
@@ -288,19 +298,26 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                                 )
                         events.append(crown_event)
                         # FABLE: RandomCompRuleset produces no per-HG scores, so the efforts stand in
+                        # FIX: This is the wrong approach; the scores should be the random values, not the efforts.
+                        # Effort management is for a planned "throwing" mechanic, and should be purely cosmetic
+                        # For now.
                         status.scores = [
                             CompScore(actor=hg, value=status.efforts[hg])
                             for hg in status.players
                         ]
                     case TT.CROWN_WINNER:
                         # TODO: Do we want HG reactions? Might be useful. For now, etc.
+                        # IGNORE: A separate turn for reactions might be better served by a DR/Q&A Phase.
+                        # Don't worry about implementing that yet, that's in the future.
                         status.winner_crowned = True
                         return self.process_phase_turn(phase, timestamp, status)
 
             
             case EvictionVotePhase():
-                TT = EvictionVotePhase.EvictionVoteTurnType
+                TT = EvictionVotePhase.TurnType
                 # TODO: The asserts need to go. This is just for the linter, for now.
+                # IGNORE: Unless you have a very good, very simple workaround that still respects the linter,
+                # Just leave these alone. Henceforth referred to as [1]
                 assert(isinstance(status, EvictionVotePhase.Status))
                 match status.get_turn_type():
                     case TT.INIT:
@@ -313,14 +330,14 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         return self.process_phase_turn(phase, timestamp, status)
                     case TT.VOTE_NEEDED:
                         vote_events = []
-                        vote_responses : list[EvictionVoteMoveResponse] = [
+                        vote_responses = [
                             hg.get_move(
                                 prompt=self.get_prompt(),
                                 user_message=self.get_user_message(),
                                 response_type=EvictionVoteMoveResponse,
                             ) for hg in status.voters
                         ]
-                        vote_moves: list[EvictionVoteMove] = [
+                        vote_moves = [
                             response.get_move()
                             for response in vote_responses
                         ]
@@ -668,6 +685,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
             
             case SleepPhase():
                 # TODO: The asserts need to go. This is just for the linter, for now.
+                # IGNORE: [1]
                 assert(isinstance(status, SleepPhase.Status))
                 schemers = self.filter_cast_by_roles([DefaultRole.ACTIVE])
                 scheme_dict: dict[DefaultHouseguest, str] = {}
@@ -677,13 +695,15 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         user_message=self.get_user_message(),
                         response_type=SchemeMoveResponse,
                     ).get_move()
-                    hg.memory = move.updated_memory
-                    scheme_dict[hg] = move.updated_memory.content
-                status.schemers = [hg for hg in schemers]
-                status.scheme_dict = scheme_dict
+                # FIX: This should be an event. It should not be processed during the phase.
+                #     hg.memory = move.updated_memory
+                #     scheme_dict[hg] = move.updated_memory.content
+                # status.schemers = [hg for hg in schemers]
+                # status.scheme_dict = scheme_dict
             case NominationPhase():
-                TT = NominationPhase.NominationTurnType
+                TT = NominationPhase.TurnType
                 # TODO: The asserts need to go. This is just for the linter, for now.
+                # IGNORE: [1]
                 assert(isinstance(status, NominationPhase.Status))
                 match status.get_turn_type():
                     case TT.INIT:
@@ -694,6 +714,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         return self.process_phase_turn(phase, timestamp, status)
                     case TT.GET_NOMINATIONS:
                         # TODO: There's gotta be a better way to verify
+                        # IGNORE: [1]
                         assert(status.hoh)
                         move = status.hoh.get_move(
                             prompt=self.get_prompt(),
@@ -731,8 +752,9 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                             events.append(crown_event)
                         status.nominees = [nom for nom in move.nominees]
             case VetoPhase():
-                TT = VetoPhase.VetoTurnType
+                TT = VetoPhase.TurnType
                 # TODO: The asserts need to go. This is just for the linter, for now.
+                # IGNORE: [1]
                 assert(isinstance(status, VetoPhase.Status))
                 match status.get_turn_type():
                     case TT.INIT:
@@ -743,6 +765,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         return self.process_phase_turn(phase, timestamp, status)
                     case TT.VETO_CHOICE:
                         # TODO: There's gotta be a better way to verify
+                        # IGNORE: [1]
                         assert(status.holder)
                         move = status.holder.get_move(
                             prompt=self.get_prompt(),
@@ -768,6 +791,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                             events.append(veto_event)
                     case TT.REPLACEMENT_CHOICE:
                         # TODO: There's gotta be a better way to verify
+                        # IGNORE: [1]
                         assert(status.holder)
                         assert(isinstance(status.saved, DefaultHouseguest))
                         hohs = self.role_dict[DefaultRole.HOH]
@@ -824,8 +848,9 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         events.append(crown_event)
                         status.replacement = replacement
             case JuryVotePhase():
-                TT = JuryVotePhase.JuryVoteTurnType
+                TT = JuryVotePhase.TurnType
                 # TODO: The asserts need to go. This is just for the linter, for now.
+                # IGNORE: [1]
                 assert(isinstance(status, JuryVotePhase.Status))
                 match status.get_turn_type():
                     case TT.INIT:
@@ -890,10 +915,12 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         )
                         events.append(result_event)
                         # FABLE: The Status has no winner field; the runner-up fills 'evicted' so the machine terminates
+                        # RESOLVE: This is correct. No action needed.
                         status.evicted = runners_up[0]
             case VetoDrawPhase():
-                TT = VetoDrawPhase.VetoDrawTurnType
+                TT = VetoDrawPhase.TurnType
                 # TODO: The asserts need to go. This is just for the linter, for now.
+                # IGNORE: [1]
                 assert(isinstance(status, VetoDrawPhase.Status))
                 match status.get_turn_type():
                     case TT.INIT:  # FABLE: This is a "No API" turn (a random draw), like the other INITs
@@ -950,6 +977,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                             if drafter == drawn:
                                 chooser = drafter
                         # TODO: There's gotta be a better way to verify
+                        # IGNORE: [1]
                         assert(chooser)
                         move = chooser.get_move(
                             prompt=self.get_prompt(),
@@ -970,8 +998,9 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         )
                         events.append(crown_event)
             case FinalThreeEvictionPhase():
-                TT = FinalThreeEvictionPhase.FinalThreeEvictionTurnType
+                TT = FinalThreeEvictionPhase.TurnType
                 # TODO: The asserts need to go. This is just for the linter, for now.
+                # IGNORE: [1]
                 assert(isinstance(status, FinalThreeEvictionPhase.Status))
                 match status.get_turn_type():
                     case TT.INIT:
@@ -1003,6 +1032,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         status.choice = move.choice
                     case TT.EVICTION:
                         # TODO: There's gotta be a better way to verify
+                        # IGNORE: [1]
                         assert(status.choice)
                         evicted = status.choice
                         saved = [
@@ -1038,6 +1068,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         status.evicted = True
             case CeremonyPhase():
                 # TODO: Remove this
+                # REMOVE: Yes
                 skipped_ceremonies.add(phase.name)
             case _:
                 raise ValueError(f"Phase type '{phase.name}' has not been covered.")

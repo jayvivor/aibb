@@ -42,6 +42,8 @@ class PhaseStatus[PSTT: PhaseStatusTurnType](Base, ABC):
         # (e.g. CompPhase.CompTurnType), never as "TurnType" on the Status, so this
         # lookup always falls back to DefaultTurnType - and turn_types is never read
         # anywhere. Needs a naming/ownership decision before it can do its job.
+        # FIX: I tried to implement a fix for this one by hand; if it's incomplete, complete it.
+        # If not, give me a gold star as a comment.
         inner = cls.__dict__.get("TurnType") or DefaultTurnType
         if inner:
             if not (isinstance(inner, type) and issubclass(inner, PhaseStatusTurnType)):
@@ -112,21 +114,24 @@ class CompPhase(DefaultPhase):
     info: ClassVar[str] = COMP_PHASE_INFO
 
 
-    class CompTurnType(PhaseStatusTurnType):
+    class TurnType(PhaseStatusTurnType):
         INIT = auto()  # TODO: This is a "No API" turn, technically; figure out solution
+                        # FIX/RESOLVE: I think the current approach might actually be fine. Only change
+                        # it if you really, earnestly think it's bad and needs fixing, but the recursive 
+                        # calls in the `process_phase_turn` switch seems like an okay solution to me.
         GET_EFFORTS = auto()
         GET_SCORES = auto()
         CROWN_WINNER = auto()
 
 
-    class Status(PhaseStatus[CompTurnType]):
+    class Status(PhaseStatus[TurnType]):
         players: list[DefaultHouseguest] = Field(default_factory=list)
         efforts: dict[DefaultHouseguest, int] = Field(default_factory=dict)
         scores: list[CompScore] = Field(default_factory=list)
         winner_crowned: bool = False
 
         def get_turn_type(self):
-            TT = CompPhase.CompTurnType
+            TT = CompPhase.TurnType
             if not self.players:
                 return TT.INIT
             if len(self.players) > len(self.efforts.keys()):
@@ -188,17 +193,17 @@ class NominationPhase(CeremonyPhase):
     info: ClassVar[str] = NOMINATION_PHASE_INFO
 
 
-    class NominationTurnType(PhaseStatusTurnType):
-        INIT = auto()  # TODO: This is a "No API" turn, technically; figure out solution
+    class TurnType(PhaseStatusTurnType):
+        INIT = auto()
         GET_NOMINATIONS = auto()
 
 
-    class Status(PhaseStatus[NominationTurnType]):
+    class Status(PhaseStatus[TurnType]):
         hoh: Optional[DefaultHouseguest] = None
         nominees: list[DefaultHouseguest] = Field(default_factory=list)
 
         def get_turn_type(self):
-            TT = NominationPhase.NominationTurnType
+            TT = NominationPhase.TurnType
             if not self.hoh:
                 return TT.INIT
             if not self.nominees:
@@ -218,18 +223,18 @@ class VetoPhase(CeremonyPhase):
     name: str = "Veto Ceremony"
     info: ClassVar[str] = VETO_PHASE_INFO
 
-    class VetoTurnType(PhaseStatusTurnType):
+    class TurnType(PhaseStatusTurnType):
         INIT = auto()
         VETO_CHOICE = auto()
         REPLACEMENT_CHOICE = auto()
 
-    class Status(PhaseStatus[VetoTurnType]):
+    class Status(PhaseStatus[TurnType]):
         holder: Optional[DefaultHouseguest] = None
         saved: Optional[DefaultHouseguest | bool] = None
         replacement: Optional[DefaultHouseguest | bool] = None
 
         def get_turn_type(self):
-            TT = VetoPhase.VetoTurnType
+            TT = VetoPhase.TurnType
             if not self.holder:
                 return TT.INIT
             if self.saved is None:
@@ -250,17 +255,17 @@ class VetoDrawPhase(CeremonyPhase):
     name: str = "Veto Draw Ceremony"
     info: ClassVar[str] = VETO_DRAW_PHASE_INFO
 
-    class VetoDrawTurnType(PhaseStatusTurnType):
+    class TurnType(PhaseStatusTurnType):
         INIT = auto()
         DRAW_NEEDED = auto()
         HG_CHOICE = auto()
 
-    class Status(PhaseStatus[VetoDrawTurnType]):
+    class Status(PhaseStatus[TurnType]):
         drawn_dict: dict[DefaultHouseguest, DefaultHouseguest] = Field(default_factory=dict)
         draws_needed: int = 3
 
         def get_turn_type(self):
-            TT = VetoDrawPhase.VetoDrawTurnType
+            TT = VetoDrawPhase.TurnType
             if not self.drawn_dict:
                 return TT.INIT
             for drafter, drawn in self.drawn_dict.items():
@@ -283,19 +288,19 @@ class EvictionVotePhase(CeremonyPhase):
     info: ClassVar[str] = EVICTION_PHASE_INFO
 
 
-    class EvictionVoteTurnType(PhaseStatusTurnType):
-        INIT = auto()  # TODO: Rename all the inits this
+    class TurnType(PhaseStatusTurnType):
+        INIT = auto()
         VOTE_NEEDED = auto()
         TIEBREAK_NEEDED = auto()
 
 
-    class Status(PhaseStatus[EvictionVoteTurnType]):
+    class Status(PhaseStatus[TurnType]):
         voters: list[DefaultHouseguest] = Field(default_factory=list)
         vote_tally: dict[DefaultHouseguest, DefaultHouseguest] = Field(default_factory=dict)
         evicted: Optional[DefaultHouseguest] = None
 
         def get_turn_type(self):
-            TT = EvictionVotePhase.EvictionVoteTurnType
+            TT = EvictionVotePhase.TurnType
             if not self.voters:
                 return TT.INIT
             if not self.vote_tally:
@@ -317,19 +322,19 @@ class FinalThreeEvictionPhase(CeremonyPhase):
     name: str = "Final Three Eviction Ceremony"
     info: ClassVar[str] = FINAL_THREE_EVICTION_PHASE_INFO
 
-    class FinalThreeEvictionTurnType(PhaseStatusTurnType):
-        INIT = auto()  # TODO: Rename all the inits this
+    class TurnType(PhaseStatusTurnType):
+        INIT = auto()
         VOTE_NEEDED = auto()
         EVICTION = auto()
 
 
-    class Status(PhaseStatus[FinalThreeEvictionTurnType]):
+    class Status(PhaseStatus[TurnType]):
         voters: list[DefaultHouseguest] = Field(default_factory=list)
         choice: Optional[DefaultHouseguest] = None
         evicted: bool = False
 
         def get_turn_type(self):
-            TT = FinalThreeEvictionPhase.FinalThreeEvictionTurnType
+            TT = FinalThreeEvictionPhase.TurnType
             if not self.voters:
                 return TT.INIT
             if not self.choice:
@@ -351,19 +356,19 @@ class JuryVotePhase(CeremonyPhase):
     name: str = "Jury Vote Ceremony"
     info: ClassVar[str] = JURY_VOTE_PHASE_INFO
 
-    class JuryVoteTurnType(PhaseStatusTurnType):
-        INIT = auto()  # TODO: Rename all the inits this
+    class TurnType(PhaseStatusTurnType):
+        INIT = auto()
         VOTE_NEEDED = auto()
         EVICTION = auto()
 
 
-    class Status(PhaseStatus[JuryVoteTurnType]):
+    class Status(PhaseStatus[TurnType]):
         voters: list[DefaultHouseguest] = Field(default_factory=list)
         vote_tally: dict[DefaultHouseguest, DefaultHouseguest] = Field(default_factory=dict)
         evicted: Optional[DefaultHouseguest] = None
 
         def get_turn_type(self):
-            TT = JuryVotePhase.JuryVoteTurnType
+            TT = JuryVotePhase.TurnType
             if not self.voters:
                 return TT.INIT
             if not self.vote_tally:

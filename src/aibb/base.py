@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import Optional, Self, Generic, TypeVar
+from typing import Optional, Self, Generic, TypeVar, ClassVar
 from enum import Enum
 from uuid import UUID, uuid4
 from abc import ABC, abstractmethod
@@ -41,6 +41,8 @@ class Base(BaseModel, ABC):
         for subclass in list(subclasses):
             subclasses.update(subclass.get_all_subclasses())
         return subclasses
+
+B = TypeVar("B", bound=Base)
 
 
 class Memory(Base):
