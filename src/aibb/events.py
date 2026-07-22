@@ -124,6 +124,11 @@ class SpokenMessage(DefaultGameEvent):
     def describe(self):
         return f"({self.speaker.name} @ {self.timestamp.describe()}): {self.content}"
 
+    def narrate(self, hg):
+        if self.perspective_map.get(hg) == Perspective.SNOOP:
+            return f"({self.timestamp.describe()}): You hear voices coming from the {self.location.name}."
+        return super().narrate(hg)
+
 
 class WhisperedMessage(DefaultGameEvent):
     content: str

@@ -59,10 +59,12 @@ class DefaultMoveResponse(MoveResponse[DefaultHouseguest, DefaultMove]):
     valid_move_types: ClassVar[list[type[DefaultMove]]]
 
     @classmethod
-    def options(cls) -> str:
+    def options(cls, hg: DefaultHouseguest, registry: Registry) -> str:
         option_lines = []
         for move_type in cls.valid_move_types:
-            option_lines.append(f"{move_type.selection_id}: {move_type.choice_info}")
+            option = move_type.get_option(hg, registry)
+            if option:
+                option_lines.append(option)
         return "\n".join(option_lines)
 
     def get_move_type(self) -> type[DefaultMove]:

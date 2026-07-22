@@ -1,4 +1,3 @@
-from __future__ import annotations
 from pydantic import Field, ValidationError
 from openrouter import OpenRouter
 from typing import Optional
@@ -12,7 +11,6 @@ __all__ = [
     "DefaultRole",
     "DefaultMemory",
     "DefaultHouseguest",
-    "DummyHouseguest",
 ]
 
 
@@ -61,10 +59,11 @@ class DefaultMemory(Memory):
 class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
     memory: DefaultMemory = Field(default_factory=DefaultMemory)
     history: list[GameEvent] = Field(default_factory=list)
+    memory_limit: Optional[int] = 100
     statuses: list[Status] = Field(default_factory=list)
     max_attempts: int = 3
 
-    class Ref(Ref["DefaultHouseguest"]):
+    class Ref(Ref):
         name: str = Field(description="The exact name of the houseguest.")
 
     # def get_roles(self):
@@ -131,13 +130,3 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
         
     def get_move[R: MoveResponse](self, prompt: str, user_message: str, response_type: type[R]) -> R:
         return self.get_chat_response(prompt, user_message, response_type)
-
-
-class DummyHouseguest(DefaultHouseguest):
-
-    def get_move[R: MoveResponse](self, prompt, user_message, response_type: type[R]) -> R:
-        # text = input(f"System:\n{prompt}\nUser:\n{user_message}content:")
-        return response_type(
-            selection_id="Dummy",
-            actor=self,
-        )

@@ -10,6 +10,7 @@ Week Schedule:
 
 Phase:
 {phase_info}
+{time_info}
 '''
 
 
@@ -17,8 +18,11 @@ MESSAGE_TEMPLATE = '''
 Scratchpad:
 {scratchpad}
 
-House Status:
-{house_status}
+Status:
+{status}
+
+Memory:
+{memory}
 
 Options:
 {options}

@@ -124,13 +124,12 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
     
     @property
     def registry(self) -> Registry:
-        r: Registry = {
+        return {
             DefaultHouseguest.Ref: self.hg_registry,
             InteractiveRoom.Ref: self.room_registry,
             Conversation.Ref: self.convo_registry,
             Interactable.Ref: self.interactable_registry,
         }
-        return r
     
 
     def describe(self):
@@ -158,7 +157,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
         return None
     
 
-    def get_base_perspective_map(self, move: DefaultMove, location: InteractiveRoom) -> dict[DefaultHouseguest, Perspective]:
+    def get_base_perspective_map(self, move: DefaultMove, location: InteractiveRoom, include_snoops: bool=False) -> dict[DefaultHouseguest, Perspective]:
         ## Perspectives
         base_perspective_map: dict[DefaultHouseguest, Perspective] = {}
         ### Actor - simplest
@@ -171,42 +170,96 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
         base_witnesses = [hg for hg in self.room_dict[location] if hg != actor]
         base_perspective_map.update({hg: Perspective.WITNESS for hg in base_witnesses})
 
-        ### Snoopers - generally, anyone in a neighboring room
-        neighbors = [room for room in self.rooms if location in self.room_layout[room]]
-        base_snoopers = [hg for room in neighbors for hg in self.room_dict[room]]
-        base_perspective_map.update({hg: Perspective.SNOOP for hg in base_snoopers})
+        ### Snoopers - anyone in a neighboring room. Only loud events carry snoopers.
+        if include_snoops:
+            neighbors = [room for room in self.rooms if location in self.room_layout[room]]
+            base_snoopers = [hg for room in neighbors for hg in self.room_dict[room]]
+            base_perspective_map.update({hg: Perspective.SNOOP for hg in base_snoopers})
 
         return base_perspective_map
 
     
-    # FIX: take the week and phase as args for get_prompt, using their `info`.
-    # Update the `info` with strategically neutral but sufficiently descriptive explanations.
-    def get_prompt(self, week: DefaultWeek, phase: DefaultPhase) -> str:
+    def get_prompt(self, week: DefaultWeek, phase: DefaultPhase, timestamp: DefaultTimestamp) -> str:
+        day = 1 + len([p for p in week.schedule[:timestamp.phase_number - 1] if isinstance(p, SleepPhase)])
+        time_info = f"It is Day {day} of {week.name}."
+        match phase:
+            case OpenPhase():
+                turns_left = phase.num_turns - timestamp.turn_number + 1
+                time_info += f" There are {turns_left} turns left in this Open phase, including this one."
+            case _:
+                pass
         return BASE_PROMPT_TEMPLATE.format(
             rules=RULES,
             schedule=week.schedule_info,
             phase_info=phase.info,
+            time_info=time_info,
         )
 
-    # FIX: take an hg and move_response.options as args for get_user_message, again using `info`.
-    # Use `choice_info` where appropriate.
+    def get_noisy_rooms(self, room: InteractiveRoom) -> list[InteractiveRoom]:
+        if not self.history:
+            return []
+        last_events = next(reversed(self.history.values()))
+        noisy = []
+        for event in last_events:
+            match event:
+                case SpokenMessage():
+                    if event.location in self.room_layout[room] and event.location not in noisy:
+                        noisy.append(event.location)
+                case _:
+                    pass
+        return noisy
+
     def get_user_message(self, hg: DefaultHouseguest, options: str) -> str:
-        house_status_lines = []
-        for room, members in self.room_dict.items():
-            if members:
-                house_status_lines.append(f"{room.name}: {listed([member.name for member in members])}")
+        status_lines = []
+        in_house = any(hg in members for members in self.room_dict.values())
+        if in_house:
+            hg_room = self.get_hg_room(hg)
+            status_lines.append(f"You are in the {hg_room.name}.")
+
+            company = [other for other in self.room_dict[hg_room] if other != hg]
+            if company:
+                status_lines.append(f"Also here: {listed([other.name for other in company])}.")
+            else:
+                status_lines.append("You are alone.")
+
+            actor_convo = self.get_hg_conversation(hg)
+            if actor_convo:
+                status_lines.append(f"You are in a conversation with {listed([p.name for p in actor_convo.active_participants if p != hg])}.")
+            for convo in self.convos:
+                if convo.room == hg_room and convo != actor_convo:
+                    status_lines.append(f"{listed([p.name for p in convo.active_participants])} are having a conversation.")
+
+            for room in self.get_noisy_rooms(hg_room):
+                status_lines.append(f"You hear voices coming from the {room.name}.")
+        else:
+            status_lines.append("You have been evicted from the house.")
+
         for role, holders in self.role_dict.items():
             if holders:
-                house_status_lines.append(f"{role.value}: {listed([holder.name for holder in holders])}")
+                status_lines.append(f"{role.value}: {listed([holder.name for holder in holders])}")
+        if self.jury:
+            status_lines.append(f"Jury: {listed([juror.name for juror in self.jury])}")
+        if self.pre_jury:
+            status_lines.append(f"Evicted before jury: {listed([evictee.name for evictee in self.pre_jury])}")
+
+        memory_lines = [event.narrate(hg) for event in hg.history]
+        if hg.memory_limit is not None:
+            memory_lines = memory_lines[-hg.memory_limit:]
+        memory = "\n".join(memory_lines) if memory_lines else "Nothing of note has happened yet."
+
         return MESSAGE_TEMPLATE.format(
             scratchpad=hg.memory.describe(),
-            house_status="\n".join(house_status_lines),
+            status="\n".join(status_lines),
+            memory=memory,
             options=options,
         )
 
 
     def process_event(self, event: DefaultGameEvent):
-        
+
+        for observer in event.perspective_map:
+            observer.history.append(event)
+
         match event:
 
             # ROLE MANAGEMENT
@@ -252,6 +305,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
             # HOUSEGUEST MANAGEMENT
             case SchemeEvent():
                 event.hg.memory = event.updated_memory
+                event.hg.history = []
 
             # ELIMINATION MANAGEMENT
             case EvictionEvent():
@@ -314,8 +368,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         # IGNORE: effort should be cosmetic for now; comps are purely random
                         effort_moves = [
                             hg.get_move(
-                                prompt=self.get_prompt(week, phase),
-                                user_message=self.get_user_message(hg, EffortMoveResponse.options()),
+                                prompt=self.get_prompt(week, phase, timestamp),
+                                user_message=self.get_user_message(hg, EffortMoveResponse.options(hg, {})),
                                 response_type=EffortMoveResponse,
                             ).get_move({}) for hg in status.players
                         ]
@@ -383,8 +437,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         vote_registry: Registry = {DefaultHouseguest.Ref: {nom.name: nom for nom in noms}}
                         vote_responses = [
                             hg.get_move(
-                                prompt=self.get_prompt(week, phase),
-                                user_message=self.get_user_message(hg, EvictionVoteMoveResponse.options()),
+                                prompt=self.get_prompt(week, phase, timestamp),
+                                user_message=self.get_user_message(hg, EvictionVoteMoveResponse.options(hg, vote_registry)),
                                 response_type=EvictionVoteMoveResponse,
                             ) for hg in status.voters
                         ]
@@ -419,8 +473,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                             hoh = hohs[0]
                             tiebreak_registry: Registry = {DefaultHouseguest.Ref: {nom.name: nom for nom in top_noms}}
                             move = hoh.get_move(
-                                prompt=self.get_prompt(week, phase),
-                                user_message=self.get_user_message(hoh, EvictionVoteMoveResponse.options()),
+                                prompt=self.get_prompt(week, phase, timestamp),
+                                user_message=self.get_user_message(hoh, EvictionVoteMoveResponse.options(hoh, tiebreak_registry)),
                                 response_type=EvictionVoteMoveResponse,
                             ).get_move(tiebreak_registry)
                             tiebreak_perspective_map = {
@@ -480,23 +534,20 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                 # Fourth, ensure that all convos are still actually active.
                 # Fifth, whisper anything that is meant for the conversationalists to hear.
                 # Last, handle any low-priority moves
-                responses = {
-                    hg: hg.get_move(
-                        prompt=self.get_prompt(week, phase),
-                        user_message=self.get_user_message(hg, OpenMoveResponse.options()),
-                        response_type=OpenMoveResponse,
-                    ) for hg in self.filter_cast_by_roles([DefaultRole.ACTIVE])
-                }
-                
                 moves = []
-                for hg, response in responses.items():
+                for hg in self.filter_cast_by_roles([DefaultRole.ACTIVE]):
                     hg_room = self.get_hg_room(hg)
-                    open_registry = {
+                    open_registry: Registry = {
                         DefaultHouseguest.Ref: {other.name: other for other in self.room_dict[hg_room] if other != hg},
                         InteractiveRoom.Ref: {room.name: room for room in self.room_layout[hg_room]},
-                        Conversation.Ref: self.convo_registry,
+                        Conversation.Ref: {p.name: convo for convo in self.convos if convo.room == hg_room for p in convo.active_participants},
                         Interactable.Ref: {interactable.name: interactable for interactable in hg_room.interactables},
                     }
+                    response = hg.get_move(
+                        prompt=self.get_prompt(week, phase, timestamp),
+                        user_message=self.get_user_message(hg, OpenMoveResponse.options(hg, open_registry)),
+                        response_type=OpenMoveResponse,
+                    )
                     moves.append(response.get_move(open_registry))
 
                 unavailable_hgs: set[DefaultHouseguest] = set()
@@ -530,7 +581,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                             )
                             events.append(end_interaction_event)
                         case SpeakMove():
-                            
+                            # Speaking is loud enough for neighboring rooms to notice
+                            base_perspective_map = self.get_base_perspective_map(move, location, include_snoops=True)
                             if actor_convo:
                                 targets = [p for p in actor_convo.active_participants if move.actor != p]
                                 base_perspective_map.update({t: Perspective.TARGET for t in targets})
@@ -718,12 +770,6 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                     if not actor_convo:
                         raise ValueError(f"{whisper.actor.name} tried to whisper, but is not part of a conversation.")
 
-                    # Whispers are too quiet for eavesdroppers to notice
-                    base_perspective_map = {
-                        hg: pers for hg, pers in base_perspective_map.items()
-                        if pers != Perspective.SNOOP
-                    }
-
                     base_perspective_map.update({t: Perspective.TARGET for t in actor_convo.active_participants if t != whisper.actor})
 
                     whisper_event = WhisperedMessage(
@@ -770,8 +816,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                 scheme_dict: dict[DefaultHouseguest, str] = {}
                 for hg in schemers:
                     move = hg.get_move(
-                        prompt=self.get_prompt(week, phase),
-                        user_message=self.get_user_message(hg, SchemeMoveResponse.options()),
+                        prompt=self.get_prompt(week, phase, timestamp),
+                        user_message=self.get_user_message(hg, SchemeMoveResponse.options(hg, {})),
                         response_type=SchemeMoveResponse,
                     ).get_move({})
                     # FIX: This should be an event. It should not be processed during the phase.
@@ -807,8 +853,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         ]
                         nomination_registry: Registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in nominatables}}
                         move = status.hoh.get_move(
-                            prompt=self.get_prompt(week, phase),
-                            user_message=self.get_user_message(status.hoh, NominationMoveResponse.options()),
+                            prompt=self.get_prompt(week, phase, timestamp),
+                            user_message=self.get_user_message(status.hoh, NominationMoveResponse.options(status.hoh, nomination_registry)),
                             response_type=NominationMoveResponse,
                         ).get_move(nomination_registry)
                         base_perspective_map = {
@@ -860,8 +906,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         noms = self.filter_cast_by_roles([DefaultRole.NOMINEE])
                         veto_registry: Registry = {DefaultHouseguest.Ref: {nom.name: nom for nom in noms}}
                         move = status.holder.get_move(
-                            prompt=self.get_prompt(week, phase),
-                            user_message=self.get_user_message(status.holder, VetoMoveResponse.options()),
+                            prompt=self.get_prompt(week, phase, timestamp),
+                            user_message=self.get_user_message(status.holder, VetoMoveResponse.options(status.holder, veto_registry)),
                             response_type=VetoMoveResponse,
                         ).get_move(veto_registry)
                         if move.choice:
@@ -897,8 +943,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         ]
                         replacement_registry: Registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in replaceables}}
                         move = hoh.get_move(
-                            prompt=self.get_prompt(week, phase),
-                            user_message=self.get_user_message(hoh, ReplacementNomineeMoveResponse.options()),
+                            prompt=self.get_prompt(week, phase, timestamp),
+                            user_message=self.get_user_message(hoh, ReplacementNomineeMoveResponse.options(hoh, replacement_registry)),
                             response_type=ReplacementNomineeMoveResponse,
                         ).get_move(replacement_registry)
                         replacement = move.choice
@@ -957,11 +1003,11 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                     case TT.VOTE_NEEDED:
                         vote_events = []
                         finalists = self.filter_cast_by_roles([DefaultRole.ACTIVE])
-                        vote_registry = {DefaultHouseguest.Ref: {finalist.name: finalist for finalist in finalists}}
+                        vote_registry: Registry = {DefaultHouseguest.Ref: {finalist.name: finalist for finalist in finalists}}
                         vote_responses = [
                             hg.get_move(
-                                prompt=self.get_prompt(week, phase),
-                                user_message=self.get_user_message(hg, JuryVoteMoveResponse.options()),
+                                prompt=self.get_prompt(week, phase, timestamp),
+                                user_message=self.get_user_message(hg, JuryVoteMoveResponse.options(hg, vote_registry)),
                                 response_type=JuryVoteMoveResponse,
                             ) for hg in status.voters
                         ]
@@ -1088,8 +1134,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         ]
                         choice_registry: Registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in choosables}}
                         move = chooser.get_move(
-                            prompt=self.get_prompt(week, phase),
-                            user_message=self.get_user_message(chooser, VetoDrawChoiceMoveResponse.options()),
+                            prompt=self.get_prompt(week, phase, timestamp),
+                            user_message=self.get_user_message(chooser, VetoDrawChoiceMoveResponse.options(chooser, choice_registry)),
                             response_type=VetoDrawChoiceMoveResponse,
                         ).get_move(choice_registry)
                         status.drawn_dict[chooser] = move.choice
@@ -1123,10 +1169,10 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                             hg for hg in self.filter_cast_by_roles([DefaultRole.ACTIVE])
                             if hg not in status.voters
                         ]
-                        vote_registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in evictables}}
+                        vote_registry: Registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in evictables}}
                         move = hoh.get_move(
-                            prompt=self.get_prompt(week, phase),
-                            user_message=self.get_user_message(hoh, EvictionVoteMoveResponse.options()),
+                            prompt=self.get_prompt(week, phase, timestamp),
+                            user_message=self.get_user_message(hoh, EvictionVoteMoveResponse.options(hoh, vote_registry)),
                             response_type=EvictionVoteMoveResponse,
                         ).get_move(vote_registry)
                         perspective_map = {

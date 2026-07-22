@@ -38,13 +38,21 @@ class PhaseStatus[PSTT: PhaseStatusTurnType](Base, ABC):
     @classmethod
     def __pydantic_init_subclass__(cls, **kw):
         super().__pydantic_init_subclass__(**kw)
-        # FABLE: The inner enums are declared on the Phase classes as <Phase>TurnType
-        # (e.g. CompPhase.CompTurnType), never as "TurnType" on the Status, so this
-        # lookup always falls back to DefaultTurnType - and turn_types is never read
-        # anywhere. Needs a naming/ownership decision before it can do its job.
+        # FABLE: The renamed TurnType enums live on the Phase classes, not the Status,
+        # so the __dict__ lookup alone can't see them; the fallback walk below pulls
+        # them out of the Status's generic parametrization instead. turn_types is
+        # still never read anywhere.
         # FIX: I tried to implement a fix for this one by hand; if it's incomplete, complete it.
         # If not, give me a gold star as a comment.
-        inner = cls.__dict__.get("TurnType") or DefaultTurnType
+        inner = cls.__dict__.get("TurnType")
+        if not inner:
+            for base in cls.__bases__:
+                metadata = getattr(base, "__pydantic_generic_metadata__", {})
+                args = metadata.get("args", ())
+                if args and isinstance(args[0], type) and issubclass(args[0], PhaseStatusTurnType):
+                    inner = args[0]
+                    break
+        inner = inner or DefaultTurnType
         if inner:
             if not (isinstance(inner, type) and issubclass(inner, PhaseStatusTurnType)):
                 raise TypeError(f"{cls.__name__}.TurnType must subclass PhaseStatusTurnType")
@@ -77,7 +85,7 @@ class DefaultPhase(Phase, ABC):
     
 
 OPEN_PHASE_INFO = '''
-This is the "Open" Phase. You are free to explore and converse with other houseguests.
+This is the "Open" Phase. You are free to move between rooms, speak with the other houseguests, and interact with the objects around the house.
 '''
 
 class OpenPhase(DefaultPhase):
@@ -103,7 +111,7 @@ class OpenPhase(DefaultPhase):
 
 
 COMP_PHASE_INFO = '''
-This is the "Competition" phase. You are competing for a prize.
+This is the "Competition" Phase. Everyone playing competes at the same time, and a single winner is crowned at the end.
 '''
     
 class CompPhase(DefaultPhase):
@@ -151,7 +159,7 @@ class CompPhase(DefaultPhase):
     
 
 SLEEP_PHASE_INFO = '''
-The house is "asleep". You will all "wake" at the same time.
+This is the "Sleep" Phase. The house is asleep, and you have a private moment to rewrite your scratchpad before everyone wakes at the same time.
 '''
   
 
@@ -176,7 +184,7 @@ class SleepPhase(DefaultPhase):
 
 
 CEREMONY_PHASE_INFO = '''
-This is a "Ceremony" phase.
+This is a "Ceremony" Phase. The house gathers, and the results are announced to everyone.
 '''
 
 class CeremonyPhase(DefaultPhase):
@@ -185,7 +193,7 @@ class CeremonyPhase(DefaultPhase):
 
 
 NOMINATION_PHASE_INFO = '''
-This is a "Nomination" Phase.
+This is the "Nomination" Phase. The Head of Household names two houseguests as nominees for eviction, and the choice is announced to the house.
 '''
 
 class NominationPhase(CeremonyPhase):
@@ -216,7 +224,7 @@ class NominationPhase(CeremonyPhase):
 
 
 VETO_PHASE_INFO = '''
-This is a "Veto" Phase.
+This is the "Veto" Phase. The houseguests drawn for the veto compete for the Power of Veto. The winner then decides whether to remove one nominee from the block; if a nominee is removed, the Head of Household names a replacement.
 '''
 
 class VetoPhase(CeremonyPhase):
@@ -248,7 +256,7 @@ class VetoPhase(CeremonyPhase):
 
 
 VETO_DRAW_PHASE_INFO = '''
-This is a "Veto Draw" Phase.
+This is the "Veto Draw" Phase. The Head of Household and both nominees play in the veto competition automatically; the remaining spots are filled by random draw. A drawn chip may instead let its drawer choose a houseguest to play.
 '''
 
 class VetoDrawPhase(CeremonyPhase):
@@ -280,7 +288,7 @@ class VetoDrawPhase(CeremonyPhase):
 
 
 EVICTION_PHASE_INFO = '''
-This is an "Eviction Vote" Phase.
+This is the "Eviction Vote" Phase. Every houseguest besides the Head of Household and the nominees votes to evict one nominee. The nominee with the most votes leaves the house; the Head of Household votes only to break a tie.
 '''
 
 class EvictionVotePhase(CeremonyPhase):
@@ -315,7 +323,7 @@ class EvictionVotePhase(CeremonyPhase):
 
 
 FINAL_THREE_EVICTION_PHASE_INFO = '''
-This is the Final Eviction Phase.
+This is the "Final Eviction" Phase. With three houseguests left, the final Head of Household alone chooses which of the other two to evict.
 '''
 
 class FinalThreeEvictionPhase(CeremonyPhase):
@@ -349,7 +357,7 @@ class FinalThreeEvictionPhase(CeremonyPhase):
 
 
 JURY_VOTE_PHASE_INFO = '''
-This is a "Jury Vote" Phase.
+This is the "Jury Vote" Phase. The members of the jury each vote for one of the two finalists. The finalist with the most votes wins the game.
 '''
 
 class JuryVotePhase(CeremonyPhase):
@@ -393,7 +401,23 @@ class DefaultWeek(Week[DefaultPhase]):
 
     @property
     def schedule_info(self):
-        return "\n".join(f" - {phase.name}" for phase in self.schedule)
+        lines = []
+        day = 1
+        day_phases: list[str] = []
+        for phase in self.schedule:
+            match phase:
+                case SleepPhase():
+                    if day_phases:
+                        lines.append(f" - Day {day}: {', '.join(day_phases)}")
+                    day += 1
+                    day_phases = []
+                case OpenPhase():
+                    pass
+                case _:
+                    day_phases.append(phase.name)
+        if day_phases:
+            lines.append(f" - Day {day}: {', '.join(day_phases)}")
+        return "\n".join(lines)
 
 
 class FinaleWeek(DefaultWeek):
