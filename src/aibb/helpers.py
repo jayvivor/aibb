@@ -30,27 +30,6 @@ DEFAULT_CAST = [
     ]
 ]
 
-DUMMY_CAST = [
-    aibb.core.DummyHouseguest(
-        name=name,
-        model_id="N/A",
-    )
-    for name in [
-        "Alice",
-        "Bob",
-        "Charlie",
-        "Diane",
-        "Edward",
-        "Freya",
-        "Georgia",
-        "Harley",
-        "Irene",
-        "Josh",
-        "Kayla",
-        "Lando",
-    ]
-]
-
 DEFAULT_FRIDGE_INVENTORY = [
     Food(name="Gallon of Milk", quantity=2),
     Food(name="Block of Cheese", quantity=2),

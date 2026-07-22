@@ -18,7 +18,7 @@ class DefaultTimestamp(Timestamp):
         return super().__hash__()
     
     def describe(self):
-        return f"Week {self.week_number}, Turn {self.turn_number}"
+        return f"Week {self.week_number}, Phase {self.phase_number}, Turn {self.turn_number}"
     
     def __gt__(self, other: Self):
         if self.week_number == other.week_number:
@@ -105,7 +105,7 @@ class DefaultGameEvent(GameEvent):
 
 
     def narrate(self, hg: DefaultHouseguest):
-        return self.describe().replace(hg.name, 'You')
+        return self.describe().replace(hg.name, f'{hg.name} (you)')
 
 
 type Observer = Base
@@ -240,7 +240,7 @@ class JoinRoomEvent(DefaultGameEvent):
         return self.actor
 
     def describe(self):
-        return f"({self.timestamp.describe()}): {self.hg.name} enters the room."
+        return f"({self.timestamp.describe()}): {self.hg.name} enters the {self.room.name}."
 
 
 class ExitRoomEvent(DefaultGameEvent):
@@ -252,7 +252,7 @@ class ExitRoomEvent(DefaultGameEvent):
         return self.actor
 
     def describe(self):
-        return f"({self.timestamp.describe()}): {self.hg.name} leaves the room."
+        return f"({self.timestamp.describe()}): {self.hg.name} leaves the {self.room.name}."
 
 
 # COLLECTIONS

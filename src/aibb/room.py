@@ -56,7 +56,7 @@ class Bedroom(InteractiveRoom[Bed]):
     num_beds: int
 
     def model_post_init(self, context):
-        self.interactables = [Bed(name=str(index)) for index in range(self.num_beds)]
+        self.interactables = [Bed(name=f"Bed #{str(index)}") for index in range(self.num_beds)]
         return super().model_post_init(context)
 
 
