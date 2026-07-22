@@ -12,6 +12,7 @@ from aibb.events import (
     Interaction,
     EndInteractionEvent,
     SchemeEvent,
+    GatherEvent,
     JoinRoomEvent,
     ExitRoomEvent,
     ExclusiveCrowning,
@@ -187,6 +188,15 @@ def replay(house: ExplorerHouse, upto: int, keep: Optional[Callable[[DefaultGame
         for event in events:
             convo_id = None
             match event:
+                case GatherEvent():
+                    gathered = [name for occupants in positions.values() for name in occupants]
+                    for occupants in positions.values():
+                        occupants.clear()
+                    positions[event.location.name] = gathered
+                    # Convos end via the EndConvoEvents that precede a gather;
+                    # dropping stragglers here is just a safety net
+                    for name in [name for name in member_map]:
+                        drop_member(name)
                 case JoinRoomEvent():
                     positions[event.room.name].append(event.hg.name)
                 case ExitRoomEvent():

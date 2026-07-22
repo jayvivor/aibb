@@ -44,6 +44,7 @@ from aibb.events import (
     DefaultGameEvent,
     SpokenMessage,
     WhisperedMessage,
+    GatherEvent,
     JoinRoomEvent,
     ExitRoomEvent,
     StartConvoEvent,
@@ -117,7 +118,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
     @property
     def convo_registry(self):
         return {hg.name: convo for convo in self.convos for hg in convo.active_participants}
-    
+
     @property
     def interactable_registry(self):
         return {interactable.name: interactable for room in self.rooms for interactable in room.interactables}
@@ -179,6 +180,28 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
         return base_perspective_map
 
     
+    def get_gather_events(self, timestamp: DefaultTimestamp, location: InteractiveRoom) -> list[DefaultGameEvent]:
+        gathered = [hg for members in self.room_dict.values() for hg in members]
+        if all(hg in self.room_dict[location] for hg in gathered):
+            return []
+        events: list[DefaultGameEvent] = []
+        for convo in self.convos:
+            events.append(EndConvoEvent(
+                timestamp=timestamp,
+                location=convo.room,
+                convo=convo,
+                perspective_map={
+                    witness: Perspective.WITNESS
+                    for witness in self.room_dict[convo.room]
+                },
+            ))
+        events.append(GatherEvent(
+            timestamp=timestamp,
+            location=location,
+            perspective_map={hg: Perspective.WITNESS for hg in gathered},
+        ))
+        return events
+
     def get_prompt(self, week: DefaultWeek, phase: DefaultPhase, timestamp: DefaultTimestamp) -> str:
         day = 1 + len([p for p in week.schedule[:timestamp.phase_number - 1] if isinstance(p, SleepPhase)])
         time_info = f"It is Day {day} of {week.name}."
@@ -293,6 +316,16 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
             case EndConvoEvent():
                 self.convos.remove(event.convo)
 
+            case GatherEvent():
+                for room in self.rooms:
+                    for interactable in room.interactables:
+                        for interacting_hgs in interactable.interactors.values():
+                            for hg in [hg for hg in interacting_hgs if hg in event.witnesses]:
+                                interacting_hgs.remove(hg)
+                for room, members in self.room_dict.items():
+                    self.room_dict[room] = [hg for hg in members if hg not in event.witnesses]
+                self.room_dict[event.location].extend(event.witnesses)
+
             # INTERACTION MANAGEMENT
             case Interaction():
                 if event.hg not in event.object.interactors[event.action]:
@@ -351,6 +384,15 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
     def process_phase_turn(self, week: DefaultWeek, phase: DefaultPhase, timestamp: DefaultTimestamp, status: PhaseStatus) -> list[DefaultGameEvent]:
         
         events = []
+
+        if timestamp.turn_number == 1:
+            match phase:
+                case OpenPhase() | SleepPhase():
+                    pass
+                case CompPhase():
+                    events.extend(self.get_gather_events(timestamp, self.room_registry["Backyard"]))
+                case _:  # Every ceremony happens in the Living Room
+                    events.extend(self.get_gather_events(timestamp, self.room_registry["Living Room"]))
 
         match phase:
             case CompPhase():
@@ -910,7 +952,14 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                             user_message=self.get_user_message(status.holder, VetoMoveResponse.options(status.holder, veto_registry)),
                             response_type=VetoMoveResponse,
                         ).get_move(veto_registry)
-                        if move.choice:
+                        # FABLE: With no eligible replacement (a final-four holder who
+                        # isn't nominated), using the veto is disallowed, per the show.
+                        hohs = self.role_dict[DefaultRole.HOH]
+                        replaceables = [
+                            hg for hg in self.filter_cast_by_roles([DefaultRole.ACTIVE])
+                            if hg not in noms + hohs + [status.holder]
+                        ]
+                        if move.choice and replaceables:
                             status.saved = move.choice
                         else:
                             status.saved = False

@@ -73,6 +73,9 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
         # return f"{self.name} ({listed(self.get_roles())})"
         return self.name
     
+    def __hash__(self):
+        return super().__hash__()
+    
     def get_chat_response[R: MoveResponse](self, prompt: str, user_message: str, response_type: type[R], client: Optional[OpenRouter]=None) -> R:
         
         if client is None:

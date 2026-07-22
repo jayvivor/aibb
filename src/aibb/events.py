@@ -1,5 +1,6 @@
 from typing import TypeVar, Optional, Self
 from enum import Enum, auto
+from functools import lru_cache
 
 from aibb.base import Base, GameEvent, Timestamp
 from aibb.houseguest import DefaultHouseguest, DefaultMemory, DefaultRole
@@ -8,6 +9,9 @@ from aibb.room import InteractiveRoom
 from aibb.utils import listed
 from aibb.move import Conversation
 
+
+
+CACHE_SIZE = 1000
 
 class DefaultTimestamp(Timestamp):
     week_number: int
@@ -103,8 +107,8 @@ class DefaultGameEvent(GameEvent):
     def snoop(self):
         return self._exclusive_perspective(Perspective.SNOOP)
 
-
-    def narrate(self, hg: DefaultHouseguest):
+    @lru_cache(maxsize=CACHE_SIZE)
+    def narrate(self, hg: DefaultHouseguest) -> str:  # type: ignore
         return self.describe().replace(hg.name, f'{hg.name} (you)')
 
 
@@ -124,7 +128,8 @@ class SpokenMessage(DefaultGameEvent):
     def describe(self):
         return f"({self.speaker.name} @ {self.timestamp.describe()}): {self.content}"
 
-    def narrate(self, hg):
+    @lru_cache(maxsize=CACHE_SIZE)
+    def narrate(self, hg: DefaultHouseguest):
         if self.perspective_map.get(hg) == Perspective.SNOOP:
             return f"({self.timestamp.describe()}): You hear voices coming from the {self.location.name}."
         return super().narrate(hg)
@@ -140,7 +145,8 @@ class WhisperedMessage(DefaultGameEvent):
     def describe(self):
         return f"({self.speaker.name}, to {listed([t.name for t in self.targets])} @ {self.timestamp.describe()}): {self.content}"
 
-    def narrate(self, hg):
+    @lru_cache(maxsize=CACHE_SIZE)
+    def narrate(self, hg: DefaultHouseguest):
         involved = [self.speaker] + self.targets
         if hg in involved:
             return super().narrate(hg)
@@ -229,6 +235,12 @@ class SchemeEvent(DefaultGameEvent):
 
     def describe(self):
         return f"({self.timestamp.describe()}): {self.hg.name} takes a moment to think."
+
+
+class GatherEvent(DefaultGameEvent):
+
+    def describe(self):
+        return f"({self.timestamp.describe()}): Everyone gathers in the {self.location.name}."
 
 
 class JoinRoomEvent(DefaultGameEvent):
