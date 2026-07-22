@@ -458,7 +458,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                                 prompt=self.get_prompt(week, phase, timestamp, hg, self.registry, EffortMoveResponse),
                                 user_message=self.get_user_message(hg, EffortMoveResponse.options(hg, {})),
                                 response_type=EffortMoveResponse,
-                                registry={},
+                                registry=self.registry,
                             ) for hg in status.players
                         }
                         efforts: dict[DefaultHouseguest, int] = {}
@@ -917,7 +917,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         prompt=self.get_prompt(week, phase, timestamp, hg, self.registry, SchemeMoveResponse),
                         user_message=self.get_user_message(hg, SchemeMoveResponse.options(hg, {})),
                         response_type=SchemeMoveResponse,
-                        registry={},
+                        registry=self.registry,
                     ) for hg in schemers
                 }
                 scheme_dict: dict[DefaultHouseguest, str] = {}

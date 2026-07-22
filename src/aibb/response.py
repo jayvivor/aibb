@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import ClassVar, Optional, Union, get_args, get_origin
 from types import UnionType
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic.json_schema import GenerateJsonSchema
 
 from aibb.base import MoveResponse, Registry, Ref
@@ -60,6 +60,18 @@ class DefaultMoveResponse(MoveResponse[DefaultHouseguest, DefaultMove]):
     explanation: str = Field(description="Your private explanation for the move; nobody else in the game will see this.")
     
     valid_move_types: ClassVar[list[type[DefaultMove]]]
+
+    @field_validator("selection_id")
+    @classmethod
+    def validate_selection_id(cls, value: str, info: ValidationInfo) -> str:
+        # Only enforced when parsing model output (get_chat_response sets the
+        # context); programmatic construction, like the dummies', is left alone
+        if info.context is None:
+            return value
+        selection_ids = [move_type.selection_id for move_type in cls.valid_move_types]
+        if value not in selection_ids:
+            raise ValueError(f"'{value}' is not one of the valid selection_ids: {', '.join(selection_ids)}")
+        return value
 
     #TODO: Instead of inferring options from get_options, both this and get_options should use some sort of resolver
     @classmethod

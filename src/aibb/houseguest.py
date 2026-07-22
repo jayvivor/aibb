@@ -109,10 +109,13 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
                                 "json_schema": {
                                     "name": response_type.__name__,
                                     "schema": response_type.get_schema(hg=self, registry=registry),
-                                    "additionalProperties": False,
+                                    "strict": True,
                                 },
+                            "plugins": [
+                                {"id": "response-healing"},
+                            ],
                         }
-                        res = client.chat.send(model=self.model_id, messages=messages, response_format=response_format, timeout_ms=1000*30)  # type: ignore
+                        res = client.chat.send(model=self.model_id, messages=messages, response_format=response_format, timeout_ms=1000*300)  # type: ignore
                         content = res.choices[0].message.content or ""
                     except OpenRouterError as e:  # provider
                         last_error = e
@@ -130,7 +133,7 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
                     candidate = content[start : end + 1] if 0 <= start < end else content
     
                     try:
-                        parsed = response_type.model_validate_json(candidate)  # type: ignore
+                        parsed = response_type.model_validate_json(candidate, context={"parse": True})  # type: ignore
                     except ValidationError as e:
                         last_error = e
                         logger.warning(f"{self.name}: {e}")
