@@ -8,6 +8,7 @@ from aibb.base import Ref, Registry, B
 from aibb.houseguest import DefaultMemory
 from aibb.interaction import Interactable
 from aibb.room import InteractiveRoom
+from aibb.log import get_logger
 from dummy import pools
 
 __all__ = [
@@ -33,6 +34,7 @@ class DummyResponse(core.DefaultMoveResponse):
 class DummyOpenMoveResponse(core.OpenMoveResponse, DummyResponse):
 
     def get_move(self, registry: Registry) -> core.DefaultMove:
+        logger = get_logger()
         actor = self.actor
         neighbor_hgs = [hg for hg in table(registry, core.DefaultHouseguest.Ref).values()]
         rooms = [room for room in table(registry, InteractiveRoom.Ref).values()]

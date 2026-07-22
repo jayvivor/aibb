@@ -5,6 +5,9 @@ Decide on your next move.
 Rules:
 {rules}
 
+Format:
+{response_format}
+
 Week Schedule:
 {schedule}
 
@@ -42,4 +45,12 @@ RULES = '''
 - At the end of the week, every houseguest besides the HOH and the nominees votes to evict one nominee. The nominee with the most votes is evicted; the HOH votes only to break a tie.
 - Houseguests evicted late in the season become members of the jury.
 - When three houseguests remain, the final HOH alone evicts one of the other two. The jury then votes for one of the two finalists, and the finalist with the most jury votes wins the game.
+'''
+
+RESPONSE_FORMAT = '''
+Respond with **exactly one JSON object** and nothing else — no code fences, no preamble, no commentary. It must match this schema exactly (field names, nesting, and types):
+
+```
+{schema}
+```
 '''

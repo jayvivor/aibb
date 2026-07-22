@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 from typing import Optional, Self, Generic, TypeVar, Mapping, cast
 from enum import Enum
 from uuid import UUID, uuid4
@@ -23,7 +24,7 @@ SV = TypeVar("SV", bound=StatusValue)
 
 
 class Base(BaseModel, ABC):
-    hash_id: UUID = Field(default_factory=uuid4, exclude=True)
+    hash_id: SkipJsonSchema[UUID] = Field(default_factory=uuid4, exclude=True)
 
     def __hash__(self):
         return self.hash_id.int
@@ -72,7 +73,6 @@ S = TypeVar("S", bound=Status)
 class Houseguest(Base, Generic[M, S]):
     name: str
     model_id: str
-    # roles: list[Role] = Field(default_factory=list)
     memory: M
     statuses: list[S]
 
@@ -186,8 +186,12 @@ class GameEvent(Base, ABC):
 class MoveResponse(Base, ABC, Generic[HG, MV]):
 
     selection_id: str
-    actor: HG
+    actor: SkipJsonSchema[Optional[HG]] = None
 
     @abstractmethod
     def get_move(self, registry: Registry) -> MV:
         ...
+
+    @classmethod
+    def get_schema(cls, *args, **kwargs) -> dict:
+        return cls.model_json_schema()

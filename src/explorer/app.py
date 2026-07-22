@@ -1,3 +1,4 @@
+import sys
 import threading
 
 from flask import Flask, jsonify, render_template, request
@@ -8,8 +9,10 @@ from explorer.house import ExplorerHouse, SimStopped
 
 app = Flask(__name__)
 
+CAST_PATH = sys.argv[1] if len(sys.argv) > 1 else None
+
 sim = {
-    "house": helpers.get_explorer_house(),
+    "house": helpers.get_explorer_house(CAST_PATH),
     "thread": None,
     "running": False,
     "error": None,
@@ -34,7 +37,9 @@ def index():
 
 @app.route("/api/season")
 def season():
-    return jsonify(replay.get_season_info(sim["house"]))
+    info = replay.get_season_info(sim["house"])
+    info["real"] = CAST_PATH is not None
+    return jsonify(info)
 
 
 @app.route("/api/status")
@@ -53,7 +58,7 @@ def run():
     if sim["running"]:
         return jsonify({"error": "A season is already running."}), 409
     if sim["house"].history or (request.json and request.json.get("fresh")):
-        sim["house"] = helpers.get_explorer_house()
+        sim["house"] = helpers.get_explorer_house(CAST_PATH)
     sim["error"] = None
     sim["running"] = True
     sim["thread"] = threading.Thread(target=run_season, args=(sim["house"],), daemon=True)

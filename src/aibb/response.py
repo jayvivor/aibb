@@ -1,7 +1,10 @@
-from typing import ClassVar, Optional
+from __future__ import annotations
+from typing import ClassVar, Optional, Union, get_args, get_origin
+from types import UnionType
 from pydantic import Field
+from pydantic.json_schema import GenerateJsonSchema
 
-from aibb.base import MoveResponse, Registry
+from aibb.base import MoveResponse, Registry, Ref
 from aibb.houseguest import DefaultHouseguest, DefaultMemory
 from aibb.room import InteractiveRoom
 from aibb.interaction import Interactable
@@ -58,6 +61,79 @@ class DefaultMoveResponse(MoveResponse[DefaultHouseguest, DefaultMove]):
     
     valid_move_types: ClassVar[list[type[DefaultMove]]]
 
+    #TODO: Instead of inferring options from get_options, both this and get_options should use some sort of resolver
+    @classmethod
+    def get_ref_property(cls, annotation, registry: Registry) -> Optional[dict]:
+        # Unwraps Optional[Ref], list[Ref], and Optional[list[Ref]] down to an
+        # inline schema whose `name` is constrained to what would actually resolve
+        if get_origin(annotation) in (Union, UnionType):
+            for arg in get_args(annotation):
+                ref_property = cls.get_ref_property(arg, registry)
+                if ref_property:
+                    return ref_property
+            return None
+        if get_origin(annotation) is list:
+            item_property = cls.get_ref_property(get_args(annotation)[0], registry)
+            if item_property:
+                return {"type": "array", "items": item_property}
+            return None
+        if isinstance(annotation, type) and issubclass(annotation, Ref):
+            names = [name for name in registry.get(annotation, {})]
+            if not names:
+                return None
+            return {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "enum": names,
+                        "description": annotation.model_fields["name"].description,
+                    },
+                },
+                "required": ["name"],
+            }
+        return None
+
+    @classmethod
+    def get_schema_generator(cls, response_type: type[DefaultMoveResponse], hg: DefaultHouseguest, registry: Optional[Registry]) -> type[GenerateJsonSchema]:
+
+        if not registry:
+            return GenerateJsonSchema
+
+        class FilteredJsonSchema(GenerateJsonSchema):
+
+            def generate(self, schema, mode="validation"):
+                json_schema = super().generate(schema, mode=mode)
+
+                # get_option is the availability oracle, same as options()
+                available = [
+                    move_type for move_type in response_type.valid_move_types
+                    if move_type.get_option(hg, registry)
+                ]
+                keep = {"selection_id", "explanation"}
+                for move_type in available:
+                    keep.update(move_type.model_fields)
+                keep.discard("actor")
+
+                properties = {}
+                for name, field_schema in json_schema.get("properties", {}).items():
+                    if name not in keep:
+                        continue
+                    annotation = response_type.model_fields[name].annotation
+                    properties[name] = cls.get_ref_property(annotation, registry) or field_schema
+
+                properties["selection_id"]["enum"] = [move_type.selection_id for move_type in available]
+                json_schema["properties"] = properties
+                json_schema["required"] = [name for name in json_schema.get("required", []) if name in properties]
+                json_schema.pop("$defs", None)
+                return json_schema
+
+        return FilteredJsonSchema
+
+    @classmethod
+    def get_schema(cls, hg: DefaultHouseguest, registry: Optional[Registry]) -> dict:
+        return cls.model_json_schema(schema_generator=cls.get_schema_generator(cls, hg, registry))
+
     @classmethod
     def options(cls, hg: DefaultHouseguest, registry: Registry) -> str:
         option_lines = []
@@ -101,6 +177,7 @@ class OpenMoveResponse(DefaultMoveResponse):
     action: Optional[str] = Field(default=None, description="What you do with the object (for 'Interact').")
 
     def get_move(self, registry: Registry) -> DefaultMove:
+        assert(self.actor)
         match self.selection_id:
             case SpeakMove.selection_id:
                 assert(self.content)
@@ -141,6 +218,7 @@ class EffortMoveResponse(DefaultMoveResponse):
     effort: int = Field(description="The percentage of effort - from 1 to 100 - that you will put into trying to win.")
 
     def get_move(self, registry: Registry) -> EffortMove:
+        assert(self.actor)
         return EffortMove(actor=self.actor, effort=self.effort)
 
 
@@ -151,6 +229,7 @@ class EvictionVoteMoveResponse(DefaultMoveResponse):
     choice: DefaultHouseguest.Ref = Field(description="The nominee you vote to evict.")
 
     def get_move(self, registry: Registry) -> EvictionVoteMove:
+        assert(self.actor)
         return EvictionVoteMove(actor=self.actor, choice=self.choice.resolve(registry))
     
 
@@ -161,6 +240,7 @@ class JuryVoteMoveResponse(DefaultMoveResponse):
     choice: DefaultHouseguest.Ref = Field(description="The finalist you vote to win the game.")
 
     def get_move(self, registry: Registry) -> JuryVoteMove:
+        assert(self.actor)
         return JuryVoteMove(actor=self.actor, choice=self.choice.resolve(registry))
 
 
@@ -171,6 +251,7 @@ class SchemeMoveResponse(DefaultMoveResponse):
     updated_scratchpad: str = Field(description="The full new contents of your scratchpad.")
 
     def get_move(self, registry: Registry) -> SchemeMove:
+        assert(self.actor)
         return SchemeMove(actor=self.actor, updated_memory=DefaultMemory(content=self.updated_scratchpad))
     
 
@@ -181,6 +262,7 @@ class NominationMoveResponse(DefaultMoveResponse):
     nominees: list[DefaultHouseguest.Ref] = Field(description="The houseguests you nominate for eviction.")
 
     def get_move(self, registry: Registry) -> NominationMove:
+        assert(self.actor)
         return NominationMove(actor=self.actor, nominees=[ref.resolve(registry) for ref in self.nominees])
 
 
@@ -191,6 +273,7 @@ class VetoMoveResponse(DefaultMoveResponse):
     choice: Optional[DefaultHouseguest.Ref] = Field(default=None, description="The nominee you remove from the block, or null to leave the nominations the same.")
 
     def get_move(self, registry: Registry) -> VetoMove:
+        assert(self.actor)
         if self.choice:
             return VetoMove(actor=self.actor, choice=self.choice.resolve(registry))
         return VetoMove(actor=self.actor, choice=None)
@@ -203,6 +286,7 @@ class ReplacementNomineeMoveResponse(DefaultMoveResponse):
     choice: DefaultHouseguest.Ref = Field(description="The houseguest you name as the replacement nominee.")
 
     def get_move(self, registry: Registry) -> ReplacementNomineeMove:
+        assert(self.actor)
         return ReplacementNomineeMove(actor=self.actor, choice=self.choice.resolve(registry))
 
 
@@ -213,4 +297,5 @@ class VetoDrawChoiceMoveResponse(DefaultMoveResponse):
     choice: DefaultHouseguest.Ref = Field(description="The houseguest you choose to play in the veto competition.")
 
     def get_move(self, registry: Registry) -> VetoDrawChoiceMove:
+        assert(self.actor)
         return VetoDrawChoiceMove(actor=self.actor, choice=self.choice.resolve(registry))

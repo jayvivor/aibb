@@ -1,5 +1,6 @@
 import random
 import time
+from typing import Optional
 
 from aibb import helpers as aibb_helpers
 from dummy import core, pools
@@ -27,6 +28,7 @@ class CountingHouseguest(core.DummyHouseguest):
 
     calls: int = 0
     input_tokens: int = 0
+    memory_limit: Optional[int] = 50
 
     def get_move[R: core.DefaultMoveResponse](self, prompt: str, user_message: str, response_type: type[R]) -> R: # type: ignore
         self.calls += 1

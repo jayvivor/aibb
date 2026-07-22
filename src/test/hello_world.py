@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 
-house = aibb.helpers.get_default_house(cast=aibb.helpers.DUMMY_CAST)
+house = aibb.helpers.get_default_house()
 
 # aibb.helpers.dump_model(house, Path("dumps/house.yaml"))
 

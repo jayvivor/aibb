@@ -2,8 +2,14 @@ from __future__ import annotations
 import random
 from pydantic import Field
 from typing import Optional, Iterable
+from json import dumps
+
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from aibb.base import House, Registry
+from aibb.log import get_logger
+from aibb.request import DefaultRequest
 from aibb.competition import DefaultCompetition, CompScore
 from aibb.houseguest import DefaultHouseguest, DefaultRole
 from aibb.room import InteractiveRoom
@@ -34,6 +40,8 @@ from aibb.move import (
     EndInteractionMove,
     SpeakMove,
     EvictionVoteMove,
+    JuryVoteMove,
+    EffortMove,
     SchemeMove,
     NominationMove,
 )
@@ -68,6 +76,7 @@ from aibb.events import (
     Perspective,
 )
 from aibb.response import (
+    DefaultMoveResponse,
     OpenMoveResponse, 
     EvictionVoteMoveResponse, 
     SchemeMoveResponse,
@@ -78,7 +87,7 @@ from aibb.response import (
     VetoDrawChoiceMoveResponse,
     JuryVoteMoveResponse,
 )
-from aibb.prompts import BASE_PROMPT_TEMPLATE, MESSAGE_TEMPLATE, RULES
+from aibb.prompts import BASE_PROMPT_TEMPLATE, MESSAGE_TEMPLATE, RULES, RESPONSE_FORMAT
 from aibb.utils import listed
 
 
@@ -180,6 +189,40 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
         return base_perspective_map
 
     
+    def get_batch_moves(self, request_dict: dict[DefaultHouseguest, DefaultRequest], poll_interval: float=0.01) -> list[DefaultMove]:
+        logger = get_logger()
+
+        logger.debug(f"Handing off a batch of {len(request_dict)} request(s)")
+        executor = ThreadPoolExecutor(max_workers=len(request_dict))
+        futures = {
+            executor.submit(hg.get_move, **request.kwargs): hg
+            for hg, request in request_dict.items()
+        }
+        responses: dict[DefaultHouseguest, DefaultMoveResponse] = {}
+        pending = dict(futures)
+        try:
+            while pending:
+                done_now = [future for future in pending if future.done()]
+                if not done_now:
+                    time.sleep(poll_interval)  # the Windows-interruptible wait
+                    continue
+                for future in done_now:
+                    hg = pending.pop(future)
+                    try:
+                        responses[hg] = future.result()
+                    except Exception as error:
+                        logger.error(f"Request for {hg.name} failed: {error!r}")
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise
+                    logger.debug(f"Response received for {hg.name} ({hg.model_id})")
+        except KeyboardInterrupt:
+            logger.error(f"Interrupted by user; abandoning batch with {len(pending)} request(s) still pending")
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        executor.shutdown()
+        logger.debug("Batch complete")
+        return [responses[hg].get_move(request.registry) for hg, request in request_dict.items()]
+
     def get_gather_events(self, timestamp: DefaultTimestamp, location: InteractiveRoom) -> list[DefaultGameEvent]:
         gathered = [hg for members in self.room_dict.values() for hg in members]
         if all(hg in self.room_dict[location] for hg in gathered):
@@ -202,7 +245,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
         ))
         return events
 
-    def get_prompt(self, week: DefaultWeek, phase: DefaultPhase, timestamp: DefaultTimestamp) -> str:
+    def get_prompt(self, week: DefaultWeek, phase: DefaultPhase, timestamp: DefaultTimestamp, hg: DefaultHouseguest, registry: Registry, response_type: type[DefaultMoveResponse]) -> str:
         day = 1 + len([p for p in week.schedule[:timestamp.phase_number - 1] if isinstance(p, SleepPhase)])
         time_info = f"It is Day {day} of {week.name}."
         match phase:
@@ -211,8 +254,10 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                 time_info += f" There are {turns_left} turns left in this Open phase, including this one."
             case _:
                 pass
+        schema = dumps(response_type.get_schema(hg=hg, registry=registry), indent=2)
         return BASE_PROMPT_TEMPLATE.format(
             rules=RULES,
+            response_format=RESPONSE_FORMAT.format(schema=schema),
             schedule=week.schedule_info,
             phase_info=phase.info,
             time_info=time_info,
@@ -271,7 +316,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
         memory = "\n".join(memory_lines) if memory_lines else "Nothing of note has happened yet."
 
         return MESSAGE_TEMPLATE.format(
-            scratchpad=hg.memory.describe(),
+            scratchpad=hg.memory.describe() or "You have not used this yet.",
             status="\n".join(status_lines),
             memory=memory,
             options=options,
@@ -408,14 +453,21 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                     case TT.GET_EFFORTS:
                         # TODO: Actually make efforts have some effect
                         # IGNORE: effort should be cosmetic for now; comps are purely random
-                        effort_moves = [
-                            hg.get_move(
-                                prompt=self.get_prompt(week, phase, timestamp),
+                        request_dict: dict[DefaultHouseguest, DefaultRequest] = {
+                            hg: hg.get_chat_request(
+                                prompt=self.get_prompt(week, phase, timestamp, hg, self.registry, EffortMoveResponse),
                                 user_message=self.get_user_message(hg, EffortMoveResponse.options(hg, {})),
                                 response_type=EffortMoveResponse,
-                            ).get_move({}) for hg in status.players
-                        ]
-                        status.efforts = {move.actor: move.effort for move in effort_moves}
+                                registry={},
+                            ) for hg in status.players
+                        }
+                        efforts: dict[DefaultHouseguest, int] = {}
+                        for move in self.get_batch_moves(request_dict):
+                            # TODO: The asserts need to go. This is just for the linter, for now.
+                            # IGNORE: [1]
+                            assert(isinstance(move, EffortMove))
+                            efforts[move.actor] = move.effort
+                        status.efforts = efforts
                     case TT.GET_SCORES:
                 
                         comp = DefaultCompetition(
@@ -477,18 +529,19 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         vote_events = []
                         noms = self.filter_cast_by_roles([DefaultRole.NOMINEE])
                         vote_registry: Registry = {DefaultHouseguest.Ref: {nom.name: nom for nom in noms}}
-                        vote_responses = [
-                            hg.get_move(
-                                prompt=self.get_prompt(week, phase, timestamp),
+                        request_dict: dict[DefaultHouseguest, DefaultRequest] = {
+                            hg: hg.get_chat_request(
+                                prompt=self.get_prompt(week, phase, timestamp, hg, self.registry, EvictionVoteMoveResponse),
                                 user_message=self.get_user_message(hg, EvictionVoteMoveResponse.options(hg, vote_registry)),
                                 response_type=EvictionVoteMoveResponse,
+                                registry=vote_registry,
                             ) for hg in status.voters
-                        ]
-                        vote_moves = [
-                            response.get_move(vote_registry)
-                            for response in vote_responses
-                        ]
-                        for move in vote_moves:
+                        }
+                        vote_tally: dict[DefaultHouseguest, DefaultHouseguest] = {}
+                        for move in self.get_batch_moves(request_dict):
+                            # TODO: The asserts need to go. This is just for the linter, for now.
+                            # IGNORE: [1]
+                            assert(isinstance(move, EvictionVoteMove))
                             vote_events.append(EvictionVoteEvent(
                                 timestamp=timestamp,
                                 location=self.room_registry["Diary Room"],
@@ -497,7 +550,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                                 },
                                 choice=move.choice,
                             ))
-                        status.vote_tally = {move.actor:move.choice for move in vote_moves}
+                            vote_tally[move.actor] = move.choice
+                        status.vote_tally = vote_tally
                         events.extend(vote_events)
                     case TT.TIEBREAK_NEEDED:
                         noms = self.filter_cast_by_roles([DefaultRole.NOMINEE])
@@ -515,7 +569,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                             hoh = hohs[0]
                             tiebreak_registry: Registry = {DefaultHouseguest.Ref: {nom.name: nom for nom in top_noms}}
                             move = hoh.get_move(
-                                prompt=self.get_prompt(week, phase, timestamp),
+                                prompt=self.get_prompt(week, phase, timestamp, hoh, self.registry, EvictionVoteMoveResponse),
                                 user_message=self.get_user_message(hoh, EvictionVoteMoveResponse.options(hoh, tiebreak_registry)),
                                 response_type=EvictionVoteMoveResponse,
                             ).get_move(tiebreak_registry)
@@ -576,7 +630,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                 # Fourth, ensure that all convos are still actually active.
                 # Fifth, whisper anything that is meant for the conversationalists to hear.
                 # Last, handle any low-priority moves
-                moves = []
+                request_dict: dict[DefaultHouseguest, DefaultRequest] = {}
                 for hg in self.filter_cast_by_roles([DefaultRole.ACTIVE]):
                     hg_room = self.get_hg_room(hg)
                     open_registry: Registry = {
@@ -585,12 +639,13 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         Conversation.Ref: {p.name: convo for convo in self.convos if convo.room == hg_room for p in convo.active_participants},
                         Interactable.Ref: {interactable.name: interactable for interactable in hg_room.interactables},
                     }
-                    response = hg.get_move(
-                        prompt=self.get_prompt(week, phase, timestamp),
+                    request_dict[hg] = hg.get_chat_request(
+                        prompt=self.get_prompt(week, phase, timestamp, hg, self.registry, OpenMoveResponse),
                         user_message=self.get_user_message(hg, OpenMoveResponse.options(hg, open_registry)),
                         response_type=OpenMoveResponse,
+                        registry=open_registry,
                     )
-                    moves.append(response.get_move(open_registry))
+                moves = self.get_batch_moves(request_dict)
 
                 unavailable_hgs: set[DefaultHouseguest] = set()
                 
@@ -635,8 +690,10 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                                 content=move.content,
                             )
                             events.append(speak_event)
-                        case _:
+                        case WhisperMove() | StartConversationMove() | JoinConversationMove() | ExitConversationMove() | ChangeRoomMove():
                             round_2_moves.add(move)
+                        case _:
+                            raise ValueError(f"'{type(move).__name__}' is not a valid open-phase move.")
 
                 # Second, if anyone leaves a convo or room, invalidate any relevant whispers.
 
@@ -855,22 +912,27 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                 # IGNORE: [1]
                 assert(isinstance(status, SleepPhase.Status))
                 schemers = self.filter_cast_by_roles([DefaultRole.ACTIVE])
-                scheme_dict: dict[DefaultHouseguest, str] = {}
-                for hg in schemers:
-                    move = hg.get_move(
-                        prompt=self.get_prompt(week, phase, timestamp),
+                request_dict: dict[DefaultHouseguest, DefaultRequest] = {
+                    hg: hg.get_chat_request(
+                        prompt=self.get_prompt(week, phase, timestamp, hg, self.registry, SchemeMoveResponse),
                         user_message=self.get_user_message(hg, SchemeMoveResponse.options(hg, {})),
                         response_type=SchemeMoveResponse,
-                    ).get_move({})
-                    # FIX: This should be an event. It should not be processed during the phase.
+                        registry={},
+                    ) for hg in schemers
+                }
+                scheme_dict: dict[DefaultHouseguest, str] = {}
+                for move in self.get_batch_moves(request_dict):
+                    # TODO: The asserts need to go. This is just for the linter, for now.
+                    # IGNORE: [1]
+                    assert(isinstance(move, SchemeMove))
                     scheme_event = SchemeEvent(
                         timestamp=timestamp,
-                        location=self.get_hg_room(hg),
-                        perspective_map={hg: Perspective.ACTOR},
+                        location=self.get_hg_room(move.actor),
+                        perspective_map={move.actor: Perspective.ACTOR},
                         updated_memory=move.updated_memory,
                     )
                     events.append(scheme_event)
-                    scheme_dict[hg] = move.updated_memory.content
+                    scheme_dict[move.actor] = move.updated_memory.content
                 status.schemers = [hg for hg in schemers]
                 status.scheme_dict = scheme_dict
             case NominationPhase():
@@ -895,7 +957,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         ]
                         nomination_registry: Registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in nominatables}}
                         move = status.hoh.get_move(
-                            prompt=self.get_prompt(week, phase, timestamp),
+                            prompt=self.get_prompt(week, phase, timestamp, status.hoh, self.registry, NominationMoveResponse),
                             user_message=self.get_user_message(status.hoh, NominationMoveResponse.options(status.hoh, nomination_registry)),
                             response_type=NominationMoveResponse,
                         ).get_move(nomination_registry)
@@ -948,7 +1010,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         noms = self.filter_cast_by_roles([DefaultRole.NOMINEE])
                         veto_registry: Registry = {DefaultHouseguest.Ref: {nom.name: nom for nom in noms}}
                         move = status.holder.get_move(
-                            prompt=self.get_prompt(week, phase, timestamp),
+                            prompt=self.get_prompt(week, phase, timestamp, status.holder, self.registry, VetoMoveResponse),
                             user_message=self.get_user_message(status.holder, VetoMoveResponse.options(status.holder, veto_registry)),
                             response_type=VetoMoveResponse,
                         ).get_move(veto_registry)
@@ -992,7 +1054,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         ]
                         replacement_registry: Registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in replaceables}}
                         move = hoh.get_move(
-                            prompt=self.get_prompt(week, phase, timestamp),
+                            prompt=self.get_prompt(week, phase, timestamp, hoh, self.registry, ReplacementNomineeMoveResponse),
                             user_message=self.get_user_message(hoh, ReplacementNomineeMoveResponse.options(hoh, replacement_registry)),
                             response_type=ReplacementNomineeMoveResponse,
                         ).get_move(replacement_registry)
@@ -1053,18 +1115,19 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         vote_events = []
                         finalists = self.filter_cast_by_roles([DefaultRole.ACTIVE])
                         vote_registry: Registry = {DefaultHouseguest.Ref: {finalist.name: finalist for finalist in finalists}}
-                        vote_responses = [
-                            hg.get_move(
-                                prompt=self.get_prompt(week, phase, timestamp),
+                        request_dict: dict[DefaultHouseguest, DefaultRequest] = {
+                            hg: hg.get_chat_request(
+                                prompt=self.get_prompt(week, phase, timestamp, hg, self.registry, JuryVoteMoveResponse),
                                 user_message=self.get_user_message(hg, JuryVoteMoveResponse.options(hg, vote_registry)),
                                 response_type=JuryVoteMoveResponse,
+                                registry=vote_registry,
                             ) for hg in status.voters
-                        ]
-                        vote_moves = [
-                            response.get_move(vote_registry)
-                            for response in vote_responses
-                        ]
-                        for move in vote_moves:
+                        }
+                        vote_tally: dict[DefaultHouseguest, DefaultHouseguest] = {}
+                        for move in self.get_batch_moves(request_dict):
+                            # TODO: The asserts need to go. This is just for the linter, for now.
+                            # IGNORE: [1]
+                            assert(isinstance(move, JuryVoteMove))
                             vote_events.append(JuryVoteEvent(
                                 timestamp=timestamp,
                                 location=self.room_registry["Diary Room"],
@@ -1073,7 +1136,8 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                                 },
                                 choice=move.choice,
                             ))
-                        status.vote_tally = {move.actor:move.choice for move in vote_moves}
+                            vote_tally[move.actor] = move.choice
+                        status.vote_tally = vote_tally
                         events.extend(vote_events)
                     case TT.EVICTION:
                         finalists = self.filter_cast_by_roles([DefaultRole.ACTIVE])
@@ -1183,7 +1247,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         ]
                         choice_registry: Registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in choosables}}
                         move = chooser.get_move(
-                            prompt=self.get_prompt(week, phase, timestamp),
+                            prompt=self.get_prompt(week, phase, timestamp, chooser, self.registry, VetoDrawChoiceMoveResponse),
                             user_message=self.get_user_message(chooser, VetoDrawChoiceMoveResponse.options(chooser, choice_registry)),
                             response_type=VetoDrawChoiceMoveResponse,
                         ).get_move(choice_registry)
@@ -1220,7 +1284,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         ]
                         vote_registry: Registry = {DefaultHouseguest.Ref: {hg.name: hg for hg in evictables}}
                         move = hoh.get_move(
-                            prompt=self.get_prompt(week, phase, timestamp),
+                            prompt=self.get_prompt(week, phase, timestamp, hoh, self.registry, EvictionVoteMoveResponse),
                             user_message=self.get_user_message(hoh, EvictionVoteMoveResponse.options(hoh, vote_registry)),
                             response_type=EvictionVoteMoveResponse,
                         ).get_move(vote_registry)
@@ -1280,15 +1344,17 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
 
 
     def simulate_season(self):
+        logger = get_logger()
         index = 0
         self.setup_new_season()
 
         for w_ind, week in enumerate(self.schedule):
-            print(f"Running {week.name}...")
+            logger.info(f"Running {week.name}")
             self.setup_new_week()
 
             for p_ind, phase in enumerate(week.schedule):
-                print(f"Running Phase '{phase.name}'...")
+                phase_log_info = f"{phase.name} ({phase.num_turns} turns)" if isinstance(phase, OpenPhase) else phase.name
+                logger.info(f"Running Phase '{phase_log_info}' ({week.name})")
 
                 t_ind = 0
                 status = phase.get_status()
@@ -1303,6 +1369,7 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         index=index,
                     )
 
+                    logger.debug(timestamp.describe())
                     events = self.process_phase_turn(week=week, phase=phase, timestamp=timestamp, status=status)
 
                     # Record and process the events
@@ -1312,3 +1379,5 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                         self.process_event(event)   
 
                     t_ind += 1
+        
+        logger.info("Simulation finished")
