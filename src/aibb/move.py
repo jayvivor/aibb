@@ -1,8 +1,9 @@
-from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, ClassVar, Optional
+from __future__ import annotations
+from abc import ABC
+from typing import TypeVar, ClassVar, Optional
 from pydantic import Field
 
-from aibb.base import Base, Move
+from aibb.base import Base, Move, Ref
 from aibb.houseguest import DefaultHouseguest, DefaultMemory
 from aibb.interaction import Interactable, Action
 from aibb.room import InteractiveRoom
@@ -35,6 +36,7 @@ __all__ = [
     "ExitConversationMove",
     "ChangeRoomMove",
     "InteractMove",
+    "EndInteractionMove",
     "SchemeMove",
     "CompMove",
     "EffortMove",
@@ -45,6 +47,8 @@ __all__ = [
     "VoteMove",
     "EvictionVoteMove",
     "JuryVoteMove",
+    "ALL_MOVE_TYPES",
+    "SELECTION_REGISTRY",
 ]
 
 
@@ -56,18 +60,6 @@ class DefaultMove(Move[DefaultHouseguest], ABC):
     choice_info: ClassVar[str]
 
 DM = TypeVar("DM", bound=DefaultMove)
-
-
-# FABLE: Competing response design - response.py builds on base.MoveResponse
-# (selection_id + actor + get_move), which is the shape house.py and the
-# houseguests actually consume. This one embeds the whole Move (full nested
-# Houseguest/Room objects) in the LLM's JSON instead. Commented out until one
-# of the two designs is chosen.
-# REMOVE: Keep this explanation str and move it to the `response.py` design. Otherwise, chuck it.
-# class MoveResponse(Base, ABC, Generic[DM]):
-#     explanation: str = Field(description="Your private explanation for the move; nobody else in the game will see this.")
-#     move: DM
-
 
 
 # OPEN
@@ -91,6 +83,9 @@ class SpeakMove(OpenMove):
 class Conversation(Base):
     active_participants: list[DefaultHouseguest]
     room: InteractiveRoom
+
+    class Ref(Ref["Conversation"]):
+        name: str = Field(description="The exact name of any current participant in the conversation.")
 
     # def add_event(self, event: JoinConvoEvent | ExitConvoEvent | SpokenMessage | WhisperedMessage):
     #     match event:
@@ -177,8 +172,17 @@ class InteractMove(DefaultMove):
         return self.action.action_description.format(actor=self.actor, object=self.interactable.name)
 
 
-# FABLE: Part of the commented-out embedded-move MoveResponse design above; the
-# live OPEN_MOVES collection is the list in response.py.
+class EndInteractionMove(DefaultMove):
+    interactable: Interactable
+
+    selection_id: ClassVar[str] = "Stop Interacting"
+    choice_info: ClassVar[str] = "Stop interacting with the specified object."
+
+    def describe(self):
+        return f"{self.actor.name} stops interacting with the {self.interactable.name}."
+
+
+# FABLE: The live OPEN_MOVES collection is the list in response.py.
 # IGNORE: Keep this, I'll implement it later.
 # OPEN_MOVES = SpeakMove | WhisperMove | StartConversationMove | JoinConversationMove | ExitConversationMove | ChangeRoomMove |  InteractMove
 #
@@ -295,27 +299,19 @@ class JuryVoteMove(VoteMove):
         return f"{self.actor.name} votes for {self.choice.name}"
     
 
-# # TODO: COLLECT SUBCLASS SELECTION IDs
+# COLLECT SUBCLASS SELECTION IDs
 # FIX: Figure out how to wire this. Please prioritize readable code over "clean", "pythonic" code.
 
+ALL_MOVE_TYPES: list[type[DefaultMove]] = []
+unchecked_move_types: list[type[DefaultMove]] = [DefaultMove]
 
-# all_subclasses = []
-# left_class = DefaultMove
-# index = 0
-
-# while index == 0 or left_class.__subclasses__():
-#     all_subclasses.append(left_class)
-#     all_subclasses.extend(left_class.__subclasses__())
-#     if index < len(all_subclasses) - 1:
-#         left_class = all_subclasses[index+1]
-#     else:
-#         break
+while unchecked_move_types:
+    move_type = unchecked_move_types.pop()
+    unchecked_move_types.extend(move_type.__subclasses__())
+    if hasattr(move_type, "selection_id"):
+        ALL_MOVE_TYPES.append(move_type)
 
 
-
-# class SelectionResponse(Base, Generic[DM]):
-#     selection_classes: list[type[DM]] = Field(exclude=True)
-
-#     @property
-#     def info(self) -> str:
-#         "\n".join(f"{sc.selection_id}" for sc in self.selection_classes)
+SELECTION_REGISTRY: dict[str, type[DefaultMove]] = {}
+for move_type in ALL_MOVE_TYPES:
+    SELECTION_REGISTRY[move_type.selection_id] = move_type

@@ -1,0 +1,159 @@
+* { box-sizing: border-box; margin: 0; }
+
+body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #16181d;
+    color: #d8dae0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #2a2d35;
+}
+
+header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.5px; }
+
+#controls { display: flex; align-items: center; gap: 8px; }
+
+button {
+    background: #262a33;
+    color: #d8dae0;
+    border: 1px solid #3a3f4b;
+    border-radius: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+button:hover { background: #313644; }
+
+#status-text { font-size: 13px; color: #8b93a3; margin-left: 8px; }
+
+main { flex: 1; display: flex; min-height: 0; }
+
+#house-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+#house-svg { flex: 1; width: 100%; }
+
+.adjacency { stroke: #2b2f39; stroke-width: 2; }
+
+.room-box { fill: #1e222b; stroke: #3a4152; stroke-width: 1.5; cursor: pointer; }
+.room-box:hover { stroke: #67b0f0; }
+.room-name { fill: #79839a; font-size: 12px; font-weight: 600; pointer-events: none; }
+
+.chip { cursor: pointer; }
+.chip-box { fill: #2c3a55; stroke: #4a6da8; stroke-width: 1; }
+.chip-box.chip-titled { fill: #4a3a1e; stroke: #c99a3c; }
+.chip:hover .chip-box { stroke-width: 2; }
+.chip-name { fill: #e6e9f0; font-size: 10px; pointer-events: none; }
+
+#tray {
+    padding: 8px 16px;
+    border-top: 1px solid #2a2d35;
+    font-size: 13px;
+    display: flex;
+    gap: 24px;
+    min-height: 38px;
+}
+
+.tray-section b { color: #8b93a3; font-weight: 600; margin-right: 6px; }
+
+.tray-chip {
+    background: #262a33;
+    border: 1px solid #3a3f4b;
+    border-radius: 9px;
+    padding: 1px 8px;
+    margin-right: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+#side-panel {
+    width: 380px;
+    border-left: 1px solid #2a2d35;
+    display: flex;
+    flex-direction: column;
+    background: #1a1d24;
+}
+
+#side-panel.hidden { display: none; }
+
+#side-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid #2a2d35;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#side-panel-close { border: none; background: none; font-size: 18px; padding: 0 4px; }
+
+#side-panel-body { overflow-y: auto; padding: 8px 12px; font-size: 12.5px; line-height: 1.45; }
+
+.history-item {
+    padding: 4px 6px;
+    border-radius: 5px;
+    margin-bottom: 2px;
+    cursor: pointer;
+    color: #b9bfcc;
+}
+
+.history-item:hover { background: #262b36; }
+
+.history-item.WhisperedMessage { color: #c9a86a; }
+.history-item.SpokenMessage { color: #d8dae0; }
+.history-item.SchemeEvent { color: #7f8aa8; font-style: italic; }
+.history-item.EvictionEvent, .history-item.EvictionResultEvent { color: #e08787; }
+.history-item.ExclusiveCrowning, .history-item.AdditiveCrowning { color: #8fd0a0; }
+
+details { margin-bottom: 4px; }
+
+summary {
+    cursor: pointer;
+    color: #c9a86a;
+    padding: 4px 6px;
+    border-radius: 5px;
+}
+
+summary:hover { background: #262b36; }
+
+details > .history-item { margin-left: 14px; }
+
+.history-note { color: #6f7889; font-style: italic; padding: 4px 6px; }
+
+footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-top: 1px solid #2a2d35;
+}
+
+#scrubber-buttons { display: flex; gap: 4px; }
+
+#turn-slider { flex: 1; accent-color: #67b0f0; }
+
+#turn-label { font-size: 13px; color: #8b93a3; white-space: nowrap; }
+
+#tooltip {
+    position: fixed;
+    background: #23272f;
+    border: 1px solid #3d4350;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    max-width: 380px;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+#tooltip.hidden, .hidden { display: none; }

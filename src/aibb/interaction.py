@@ -1,9 +1,10 @@
+from __future__ import annotations
 from enum import Enum
-from typing import TypeVar, Generic, ClassVar, get_args
+from typing import TypeVar, Generic, get_args
 from abc import ABC
 from pydantic import Field
 
-from aibb.base import Base, Houseguest
+from aibb.base import Base, Houseguest, Ref
 
 
 
@@ -27,6 +28,9 @@ class Interactable(Base, ABC, Generic[A]):
     name: str
     interactors: dict[A, list[Houseguest]] = Field(default_factory=dict)
 
+    class Ref(Ref["Interactable"]):
+        name: str = Field(description="The exact name of the object.")
+
     def model_post_init(self, context):
         annotation = type(self).model_fields["interactors"].annotation
         key_type, _ = get_args(annotation)  # e.g. (BedAction, list[Houseguest])
@@ -40,11 +44,9 @@ class Interactable(Base, ABC, Generic[A]):
             )
         return super().model_post_init(context)
 
-    # FABLE: No interaction lifecycle exists - nothing ever ends an interaction
-    # (see the commented turn_duration on the Interaction event), so registering
-    # actors into `interactors` here would accumulate forever, and exclusivity
-    # across objects (one HG, one activity) has no home. Commented out until
-    # durations/exclusivity are decided.
+    # FABLE: Registration/removal now lives in DefaultHouse.process_event
+    # (Interaction / EndInteractionEvent); exclusivity across objects (one HG,
+    # one activity) still has no home.
     # FIX/IGNORE: This is a planned RPG-adjacent feature; the idea is that the interaction
     # Actually has consequences eventually, and `interact` is a handler for that.
     # The temporary fix is to have a `EndInteraction` Move/GameEvent. Ensure it auto-triggers

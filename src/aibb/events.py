@@ -2,7 +2,7 @@ from typing import TypeVar, Optional, Self
 from enum import Enum, auto
 
 from aibb.base import Base, GameEvent, Timestamp
-from aibb.houseguest import DefaultHouseguest, DefaultRole
+from aibb.houseguest import DefaultHouseguest, DefaultMemory, DefaultRole
 from aibb.interaction import Interactable, Action
 from aibb.room import InteractiveRoom
 from aibb.utils import listed
@@ -13,6 +13,9 @@ class DefaultTimestamp(Timestamp):
     week_number: int
     phase_number: int
     turn_number: int
+
+    def __hash__(self):
+        return super().__hash__()
     
     def describe(self):
         return f"Week {self.week_number}, Turn {self.turn_number}"
@@ -201,6 +204,28 @@ class Interaction(DefaultGameEvent):
         return f"({self.timestamp.describe()}): {self.actor.name} interacts with the {self.object.name}."
 
 
+class EndInteractionEvent(DefaultGameEvent):
+    object: Interactable
+
+    @property
+    def hg(self):
+        return self.actor
+
+    def describe(self):
+        return f"({self.timestamp.describe()}): {self.actor.name} stops interacting with the {self.object.name}."
+
+
+class SchemeEvent(DefaultGameEvent):
+    updated_memory: DefaultMemory
+
+    @property
+    def hg(self):
+        return self.actor
+
+    def describe(self):
+        return f"({self.timestamp.describe()}): {self.hg.name} takes a moment to think."
+
+
 class JoinRoomEvent(DefaultGameEvent):
 
     room: InteractiveRoom
@@ -366,10 +391,8 @@ class VetoUseEvent(DefaultGameEvent):
 
 # SPECIAL/META
 
-# FABLE: No emission site or semantics exist - a week's end has no location or
-# perspective_map to fill DefaultGameEvent with. Commented out until it has a shape.
 # FIX: This is intentionally bare, and it's only meant to happen if a week needs to end
 # unexpectedly (ex: 'MedEvac' (an endpoint goes down mid-season)); don't worry about the
 # use cases for now, but handle this in DefaultHouse by resetting the week.
-# class EndWeek(DefaultGameEvent):
-#     pass
+class EndWeek(DefaultGameEvent):
+    pass

@@ -32,5 +32,10 @@ Options:
 # Just the literal mechanics of the game, and that they are trying to be the last Houseguest standing.
 
 RULES = '''
-[TBD]
+- The houseguests live together in the Big Brother house. Houseguests are evicted one at a time, and the last houseguest standing wins.
+- Each week begins with a Head of Household (HOH) competition. The winner is safe for the week and must nominate two houseguests for eviction.
+- Six houseguests play in the Power of Veto competition: the HOH, both nominees, and three others selected by random draw. The veto winner may remove one nominee from the block; if they do, the HOH must name a replacement nominee.
+- At the end of the week, every houseguest besides the HOH and the nominees votes to evict one nominee. The nominee with the most votes is evicted; the HOH votes only to break a tie.
+- Houseguests evicted late in the season become members of the jury.
+- When three houseguests remain, the final HOH alone evicts one of the other two. The jury then votes for one of the two finalists, and the finalist with the most jury votes wins the game.
 '''

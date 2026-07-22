@@ -1,7 +1,8 @@
+from __future__ import annotations
 from pydantic import Field
 from typing import TypeVar, Generic
 
-from aibb.base import Room
+from aibb.base import Room, Ref
 from aibb.interaction import (
     Interactable,
     Bed,
@@ -42,6 +43,9 @@ I = TypeVar("I", bound=Interactable)
 class InteractiveRoom(Room, Generic[I]):
 
     interactables: list[I] = Field(default_factory=list)
+
+    class Ref(Ref["InteractiveRoom"]):
+        name: str = Field(description="The exact name of the room.")
 
     def describe(self):
         return self.name

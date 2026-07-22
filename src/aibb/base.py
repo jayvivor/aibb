@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import Optional, Self, Generic, TypeVar, ClassVar
+from typing import Optional, Self, Generic, TypeVar, Mapping, cast
 from enum import Enum
 from uuid import UUID, uuid4
 from abc import ABC, abstractmethod
@@ -43,6 +43,18 @@ class Base(BaseModel, ABC):
         return subclasses
 
 B = TypeVar("B", bound=Base)
+
+
+class Ref(Base, Generic[B]):
+    name: str
+
+    def describe(self):
+        return self.name
+
+    def resolve(self, registry: Registry) -> B:
+        return cast(B, registry[type(self)][self.name])
+
+type Registry = Mapping[type[Ref], Mapping[str, Base]]
 
 
 class Memory(Base):
@@ -159,6 +171,9 @@ class Competition(Base, ABC, Generic[HG, CR]):
 class Timestamp(Base):
     index: int
 
+    def __hash__(self):
+        return super().__hash__()
+
 
 class GameEvent(Base, ABC):
     timestamp: Timestamp
@@ -174,5 +189,5 @@ class MoveResponse(Base, ABC, Generic[HG, MV]):
     actor: HG
 
     @abstractmethod
-    def get_move(self) -> MV:
+    def get_move(self, registry: Registry) -> MV:
         ...

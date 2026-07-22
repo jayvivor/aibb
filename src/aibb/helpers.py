@@ -154,7 +154,7 @@ def get_default_house(cast=DEFAULT_CAST):
         cast=cast,
         rooms=rooms,
         room_layout=room_layout,
-        schedule=get_default_schedule(),
+        schedule=get_default_schedule(cast_size=len(cast)),
     )
 
     return house

@@ -4,7 +4,7 @@ from aibb import helpers as aibb_helpers
 from dummy import pools, core
 
 def get_random_cast(size: int=16):
-    return [core.DummyHouseguest(name=random.choice(pools.NAMES)) for _ in range(size)]
+    return [core.DummyHouseguest(name=name) for name in random.sample(pools.NAMES, k=size)]
 
 
 def get_default_house():

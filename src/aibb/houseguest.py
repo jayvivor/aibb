@@ -1,9 +1,10 @@
+from __future__ import annotations
 from pydantic import Field, ValidationError
 from openrouter import OpenRouter
 from typing import Optional
 
-from aibb.base import Role, Memory, Houseguest, Status, GameEvent, MoveResponse
-from aibb.utils import listed, get_client
+from aibb.base import Role, Memory, Houseguest, Status, GameEvent, MoveResponse, Ref
+from aibb.utils import get_client
 
 
 
@@ -62,6 +63,9 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
     history: list[GameEvent] = Field(default_factory=list)
     statuses: list[Status] = Field(default_factory=list)
     max_attempts: int = 3
+
+    class Ref(Ref["DefaultHouseguest"]):
+        name: str = Field(description="The exact name of the houseguest.")
 
     # def get_roles(self):
     #     return [r.value for r in self.roles]

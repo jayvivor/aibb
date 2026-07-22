@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>aibb explorer</title>
+    <link rel="stylesheet" href="/static/explorer.css">
+</head>
+<body>
+    <header>
+        <h1>aibb explorer</h1>
+        <div id="controls">
+            <button id="run-button">Run</button>
+            <button id="stop-button">Stop</button>
+            <button id="rerun-button">Re-run (new cast)</button>
+            <span id="status-text">idle</span>
+        </div>
+    </header>
+
+    <main>
+        <div id="house-panel">
+            <svg id="house-svg" viewBox="0 0 1200 720" preserveAspectRatio="xMidYMid meet"></svg>
+            <div id="tray"></div>
+        </div>
+        <aside id="side-panel" class="hidden">
+            <div id="side-panel-header">
+                <span id="side-panel-title"></span>
+                <button id="side-panel-close">&times;</button>
+            </div>
+            <div id="side-panel-body"></div>
+        </aside>
+    </main>
+
+    <footer id="scrubber">
+        <div id="scrubber-buttons">
+            <button id="prev-phase" title="Previous phase">&laquo;</button>
+            <button id="prev-turn" title="Previous turn">&lsaquo;</button>
+            <button id="next-turn" title="Next turn">&rsaquo;</button>
+            <button id="next-phase" title="Next phase">&raquo;</button>
+        </div>
+        <input type="range" id="turn-slider" min="1" max="1" value="1">
+        <span id="turn-label">&mdash;</span>
+    </footer>
+
+    <div id="tooltip" class="hidden"></div>
+
+    <script src="/static/explorer.js"></script>
+</body>
+</html>

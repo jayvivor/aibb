@@ -1,9 +1,13 @@
-from typing import ClassVar
+from typing import ClassVar, Optional
+from pydantic import Field
 
-from aibb.base import MoveResponse
-from aibb.houseguest import DefaultHouseguest
+from aibb.base import MoveResponse, Registry
+from aibb.houseguest import DefaultHouseguest, DefaultMemory
+from aibb.room import InteractiveRoom
+from aibb.interaction import Interactable
 from aibb.move import (
     DefaultMove,
+    Conversation,
     SpeakMove,
     WhisperMove,
     StartConversationMove,
@@ -11,6 +15,7 @@ from aibb.move import (
     ExitConversationMove,
     ChangeRoomMove,
     InteractMove,
+    EndInteractionMove,
     EvictionVoteMove,
     JuryVoteMove,
     SchemeMove,
@@ -36,18 +41,6 @@ __all__ = [
 ]
 
 
-# FABLE: The response layer is schema-only for now; every get_move below is
-# commented out because the dispatch mechanism is undecided:
-#   - selection_id is meant to pick the move type out of valid_move_types, but the
-#     responses carry no payload fields for the chosen move (nominee_names below is
-#     the one example of the intended shape - LLM output as plain strings).
-#   - Resolving those strings into Houseguest/Room objects needs the House
-#     registries, which get_move() has no path to.
-#   - actor is a full Houseguest model: the LLM cannot emit it, and only
-#     DummyHouseguest injects it today; get_chat_response validates the raw JSON
-#     with no injection step.
-#   - move.py holds a competing (commented-out) design that embeds the whole Move
-#     in the response instead.
 # FIX: Use a ref/registry pattern. Create a per-Base-subclass `Ref` class 
 # (ex: DefaultHouseguest gets its own `class Ref(Ref):` definition), and the house
 # has a registry for resolving refs to their objects. This way, the house "knows" which
@@ -60,8 +53,23 @@ __all__ = [
 
 
 class DefaultMoveResponse(MoveResponse[DefaultHouseguest, DefaultMove]):
+
+    explanation: str = Field(description="Your private explanation for the move; nobody else in the game will see this.")
     
     valid_move_types: ClassVar[list[type[DefaultMove]]]
+
+    @classmethod
+    def options(cls) -> str:
+        option_lines = []
+        for move_type in cls.valid_move_types:
+            option_lines.append(f"{move_type.selection_id}: {move_type.choice_info}")
+        return "\n".join(option_lines)
+
+    def get_move_type(self) -> type[DefaultMove]:
+        for move_type in self.valid_move_types:
+            if move_type.selection_id == self.selection_id:
+                return move_type
+        raise ValueError(f"'{self.selection_id}' is not a valid selection for {type(self).__name__}.")
 
     def describe(self):
             raise NotImplementedError
@@ -75,102 +83,132 @@ OPEN_MOVES: list[type[DefaultMove]] = [
     ExitConversationMove,
     ChangeRoomMove,
     InteractMove,
+    EndInteractionMove,
 ]
 
 class OpenMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = OPEN_MOVES
-    
-    # FABLE: see the module note; the placeholder returned a hardcoded SpeakMove
-    # FIX: See above
-    # def get_move(self):
-    #     return SpeakMove(
-    #         actor=self.actor,
-    #         content="Howdy, World!",
-    #     )
+
+    content: Optional[str] = Field(default=None, description="What you say (for 'Speak' and 'Whisper').")
+    allow_join: Optional[bool] = Field(default=None, description="Whether to go through with a 'Whisper' if someone joins the conversation this turn.")
+    participants: Optional[list[DefaultHouseguest.Ref]] = Field(default=None, description="Who you pull aside (for 'Start Conversation').")
+    conversation: Optional[Conversation.Ref] = Field(default=None, description="The conversation in question (for 'Join Ongoing Conversation' and 'Leave Conversation').")
+    room: Optional[InteractiveRoom.Ref] = Field(default=None, description="The room to enter (for 'Change Rooms').")
+    interactable: Optional[Interactable.Ref] = Field(default=None, description="The object in question (for 'Interact' and 'Stop Interacting').")
+    action: Optional[str] = Field(default=None, description="What you do with the object (for 'Interact').")
+
+    def get_move(self, registry: Registry) -> DefaultMove:
+        match self.selection_id:
+            case SpeakMove.selection_id:
+                assert(self.content)
+                return SpeakMove(actor=self.actor, content=self.content)
+            case WhisperMove.selection_id:
+                assert(self.content)
+                return WhisperMove(actor=self.actor, content=self.content, allow_join=self.allow_join or False)
+            case StartConversationMove.selection_id:
+                assert(self.participants)
+                return StartConversationMove(actor=self.actor, participants=[ref.resolve(registry) for ref in self.participants])
+            case JoinConversationMove.selection_id:
+                assert(self.conversation)
+                return JoinConversationMove(actor=self.actor, conversation=self.conversation.resolve(registry))
+            case ExitConversationMove.selection_id:
+                assert(self.conversation)
+                return ExitConversationMove(actor=self.actor, conversation=self.conversation.resolve(registry))
+            case ChangeRoomMove.selection_id:
+                assert(self.room)
+                return ChangeRoomMove(actor=self.actor, room=self.room.resolve(registry))
+            case InteractMove.selection_id:
+                assert(self.interactable)
+                interactable = self.interactable.resolve(registry)
+                for action in interactable.interactors:
+                    if action.value == self.action:
+                        return InteractMove(actor=self.actor, interactable=interactable, action=action)
+                raise ValueError(f"'{self.action}' is not a valid action for the {interactable.name}.")
+            case EndInteractionMove.selection_id:
+                assert(self.interactable)
+                return EndInteractionMove(actor=self.actor, interactable=self.interactable.resolve(registry))
+            case _:
+                raise ValueError(f"'{self.selection_id}' is not a valid selection for {type(self).__name__}.")
 
 
 class EffortMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [EffortMove]
 
-    # FABLE: see the module note
-    # FIX: See above
-    # def get_move(self) -> EffortMove:
-    #     ...
+    effort: int = Field(description="The percentage of effort - from 1 to 100 - that you will put into trying to win.")
+
+    def get_move(self, registry: Registry) -> EffortMove:
+        return EffortMove(actor=self.actor, effort=self.effort)
 
 
 class EvictionVoteMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [EvictionVoteMove]
 
-    # FABLE: see the module note
-    # FIX: See above
-    # def get_move(self) -> EvictionVoteMove:
-    #     ...
+    choice: DefaultHouseguest.Ref = Field(description="The nominee you vote to evict.")
+
+    def get_move(self, registry: Registry) -> EvictionVoteMove:
+        return EvictionVoteMove(actor=self.actor, choice=self.choice.resolve(registry))
     
 
 class JuryVoteMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [JuryVoteMove]
 
-    # FABLE: see the module note
-    # FIX: See above
-    # def get_move(self) -> JuryVoteMove:
-    #     ...
+    choice: DefaultHouseguest.Ref = Field(description="The finalist you vote to win the game.")
+
+    def get_move(self, registry: Registry) -> JuryVoteMove:
+        return JuryVoteMove(actor=self.actor, choice=self.choice.resolve(registry))
 
 
 class SchemeMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [SchemeMove]
 
-    # FABLE: see the module note
-    # FIX: See above
-    # def get_move(self) -> SchemeMove:
-    #     ...
+    updated_scratchpad: str = Field(description="The full new contents of your scratchpad.")
+
+    def get_move(self, registry: Registry) -> SchemeMove:
+        return SchemeMove(actor=self.actor, updated_memory=DefaultMemory(content=self.updated_scratchpad))
     
 
 class NominationMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [NominationMove]
 
-    nominee_names: list[str]
+    nominees: list[DefaultHouseguest.Ref] = Field(description="The houseguests you nominate for eviction.")
 
-    # FABLE: see the module note
-    # FIX: See above
-    # def get_move(self) -> NominationMove:
-    #     ...
-    #     # return NominationMove(
-    #     #     actor=self.actor,
-    #     #     nominees=
-    #     # )
+    def get_move(self, registry: Registry) -> NominationMove:
+        return NominationMove(actor=self.actor, nominees=[ref.resolve(registry) for ref in self.nominees])
 
 
 class VetoMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [VetoMove]
 
-    # FABLE: see the module note
-    # FIX: See above
-    # def get_move(self) -> VetoMove:
-    #     ...
+    choice: Optional[DefaultHouseguest.Ref] = Field(default=None, description="The nominee you remove from the block, or null to leave the nominations the same.")
+
+    def get_move(self, registry: Registry) -> VetoMove:
+        if self.choice:
+            return VetoMove(actor=self.actor, choice=self.choice.resolve(registry))
+        return VetoMove(actor=self.actor, choice=None)
 
 
 class ReplacementNomineeMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [ReplacementNomineeMove]
 
-    # FABLE: see the module note
-    # FIX: See above
-    # def get_move(self) -> ReplacementNomineeMove:
-    #     ...
+    choice: DefaultHouseguest.Ref = Field(description="The houseguest you name as the replacement nominee.")
+
+    def get_move(self, registry: Registry) -> ReplacementNomineeMove:
+        return ReplacementNomineeMove(actor=self.actor, choice=self.choice.resolve(registry))
 
 
 class VetoDrawChoiceMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [VetoDrawChoiceMove]
 
-    # FABLE: see the module note
-    # FIX: See above
-    # def get_move(self) -> VetoDrawChoiceMove:
-    #     ...
+    choice: DefaultHouseguest.Ref = Field(description="The houseguest you choose to play in the veto competition.")
+
+    def get_move(self, registry: Registry) -> VetoDrawChoiceMove:
+        return VetoDrawChoiceMove(actor=self.actor, choice=self.choice.resolve(registry))
