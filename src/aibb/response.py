@@ -1,4 +1,5 @@
 from __future__ import annotations
+import random
 from typing import ClassVar, Optional, Union, get_args, get_origin
 from types import UnionType
 from pydantic import Field, ValidationInfo, field_validator
@@ -103,6 +104,7 @@ class DefaultMoveResponse(MoveResponse[DefaultHouseguest, DefaultMove]):
                     },
                 },
                 "required": ["name"],
+                "additionalProperties": False,
             }
         return None
 
@@ -137,6 +139,7 @@ class DefaultMoveResponse(MoveResponse[DefaultHouseguest, DefaultMove]):
                 properties["selection_id"]["enum"] = [move_type.selection_id for move_type in available]
                 json_schema["properties"] = properties
                 json_schema["required"] = [name for name in json_schema.get("required", []) if name in properties]
+                json_schema["additionalProperties"] = False
                 json_schema.pop("$defs", None)
                 return json_schema
 
@@ -154,6 +157,11 @@ class DefaultMoveResponse(MoveResponse[DefaultHouseguest, DefaultMove]):
             if option:
                 option_lines.append(option)
         return "\n".join(option_lines)
+
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "DefaultMoveResponse":
+        """A safe response used when no valid response could be obtained."""
+        raise NotImplementedError
 
     def get_move_type(self) -> type[DefaultMove]:
         for move_type in self.valid_move_types:
@@ -223,6 +231,16 @@ class OpenMoveResponse(DefaultMoveResponse):
                 raise ValueError(f"'{self.selection_id}' is not a valid selection for {type(self).__name__}.")
 
 
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "OpenMoveResponse":
+        return cls(
+            actor=hg,
+            selection_id=SpeakMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            content="*says nothing*",
+        )
+
+
 class EffortMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [EffortMove]
@@ -232,6 +250,16 @@ class EffortMoveResponse(DefaultMoveResponse):
     def get_move(self, registry: Registry) -> EffortMove:
         assert(self.actor)
         return EffortMove(actor=self.actor, effort=self.effort)
+
+
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "EffortMoveResponse":
+        return cls(
+            actor=hg,
+            selection_id=EffortMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            effort=random.randint(1, 100),
+        )
 
 
 class EvictionVoteMoveResponse(DefaultMoveResponse):
@@ -245,6 +273,17 @@ class EvictionVoteMoveResponse(DefaultMoveResponse):
         return EvictionVoteMove(actor=self.actor, choice=self.choice.resolve(registry))
     
 
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "EvictionVoteMoveResponse":
+        name = random.choice([name for name in registry.get(DefaultHouseguest.Ref, {})])
+        return cls(
+            actor=hg,
+            selection_id=EvictionVoteMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            choice=DefaultHouseguest.Ref(name=name),
+        )
+
+
 class JuryVoteMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [JuryVoteMove]
@@ -254,6 +293,17 @@ class JuryVoteMoveResponse(DefaultMoveResponse):
     def get_move(self, registry: Registry) -> JuryVoteMove:
         assert(self.actor)
         return JuryVoteMove(actor=self.actor, choice=self.choice.resolve(registry))
+
+
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "JuryVoteMoveResponse":
+        name = random.choice([name for name in registry.get(DefaultHouseguest.Ref, {})])
+        return cls(
+            actor=hg,
+            selection_id=JuryVoteMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            choice=DefaultHouseguest.Ref(name=name),
+        )
 
 
 class SchemeMoveResponse(DefaultMoveResponse):
@@ -267,6 +317,17 @@ class SchemeMoveResponse(DefaultMoveResponse):
         return SchemeMove(actor=self.actor, updated_memory=DefaultMemory(content=self.updated_scratchpad))
     
 
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "SchemeMoveResponse":
+        # Keeps the scratchpad exactly as it was
+        return cls(
+            actor=hg,
+            selection_id=SchemeMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            updated_scratchpad=hg.memory.content,
+        )
+
+
 class NominationMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [NominationMove]
@@ -276,6 +337,17 @@ class NominationMoveResponse(DefaultMoveResponse):
     def get_move(self, registry: Registry) -> NominationMove:
         assert(self.actor)
         return NominationMove(actor=self.actor, nominees=[ref.resolve(registry) for ref in self.nominees])
+
+
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "NominationMoveResponse":
+        names = random.sample([name for name in registry.get(DefaultHouseguest.Ref, {})], k=2)
+        return cls(
+            actor=hg,
+            selection_id=NominationMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            nominees=[DefaultHouseguest.Ref(name=name) for name in names],
+        )
 
 
 class VetoMoveResponse(DefaultMoveResponse):
@@ -291,6 +363,17 @@ class VetoMoveResponse(DefaultMoveResponse):
         return VetoMove(actor=self.actor, choice=None)
 
 
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "VetoMoveResponse":
+        # Leaves the nominations unchanged
+        return cls(
+            actor=hg,
+            selection_id=VetoMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            choice=None,
+        )
+
+
 class ReplacementNomineeMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [ReplacementNomineeMove]
@@ -302,6 +385,17 @@ class ReplacementNomineeMoveResponse(DefaultMoveResponse):
         return ReplacementNomineeMove(actor=self.actor, choice=self.choice.resolve(registry))
 
 
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "ReplacementNomineeMoveResponse":
+        name = random.choice([name for name in registry.get(DefaultHouseguest.Ref, {})])
+        return cls(
+            actor=hg,
+            selection_id=ReplacementNomineeMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            choice=DefaultHouseguest.Ref(name=name),
+        )
+
+
 class VetoDrawChoiceMoveResponse(DefaultMoveResponse):
 
     valid_move_types: ClassVar[list[type[DefaultMove]]] = [VetoDrawChoiceMove]
@@ -311,3 +405,13 @@ class VetoDrawChoiceMoveResponse(DefaultMoveResponse):
     def get_move(self, registry: Registry) -> VetoDrawChoiceMove:
         assert(self.actor)
         return VetoDrawChoiceMove(actor=self.actor, choice=self.choice.resolve(registry))
+
+    @classmethod
+    def fallback(cls, hg: DefaultHouseguest, registry: Registry) -> "VetoDrawChoiceMoveResponse":
+        name = random.choice([name for name in registry.get(DefaultHouseguest.Ref, {})])
+        return cls(
+            actor=hg,
+            selection_id=VetoDrawChoiceMove.selection_id,
+            explanation="Fallback: no valid response was received.",
+            choice=DefaultHouseguest.Ref(name=name),
+        )

@@ -1,5 +1,6 @@
 import sys
 import threading
+import logging
 
 from flask import Flask, jsonify, render_template, request
 
@@ -44,6 +45,8 @@ def season():
 
 @app.route("/api/status")
 def status():
+    original_level = app.logger.getEffectiveLevel()
+    app.logger.setLevel(logging.DEBUG)
     items = replay.get_history_items(sim["house"])
     return jsonify({
         "running": sim["running"],

@@ -111,11 +111,11 @@ class DefaultHouseguest(Houseguest[DefaultMemory, Status]):
                                     "schema": response_type.get_schema(hg=self, registry=registry),
                                     "strict": True,
                                 },
-                            "plugins": [
-                                {"id": "response-healing"},
-                            ],
                         }
-                        res = client.chat.send(model=self.model_id, messages=messages, response_format=response_format, timeout_ms=1000*300)  # type: ignore
+                        plugins = [
+                            {"id": "response-healing"},
+                        ]
+                        res = client.chat.send(model=self.model_id, messages=messages, response_format=response_format, plugins=plugins, timeout_ms=1000*300)  # type: ignore
                         content = res.choices[0].message.content or ""
                     except OpenRouterError as e:  # provider
                         last_error = e

@@ -189,19 +189,23 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
         return base_perspective_map
 
     
-    def get_batch_moves(self, request_dict: dict[DefaultHouseguest, DefaultRequest], poll_interval: float=0.01) -> list[DefaultMove]:
+    def get_batch_moves(self, request_dict: dict[DefaultHouseguest, DefaultRequest], poll_interval: float=0.01, timeout: float=60.0) -> list[DefaultMove]:
         logger = get_logger()
 
         logger.debug(f"Handing off a batch of {len(request_dict)} request(s)")
         executor = ThreadPoolExecutor(max_workers=len(request_dict))
         futures = {
-            executor.submit(hg.get_move, **request.kwargs): hg
+            executor.submit(hg.get_move, **request.kwargs, registry=request.registry): hg
             for hg, request in request_dict.items()
         }
         responses: dict[DefaultHouseguest, DefaultMoveResponse] = {}
+        fallback_reasons: dict[DefaultHouseguest, str] = {}
         pending = dict(futures)
+        start = time.time()
         try:
             while pending:
+                if time.time() - start > timeout:
+                    break
                 done_now = [future for future in pending if future.done()]
                 if not done_now:
                     time.sleep(poll_interval)  # the Windows-interruptible wait
@@ -211,17 +215,37 @@ class DefaultHouse(House[DefaultHouseguest, InteractiveRoom, DefaultWeek, Defaul
                     try:
                         responses[hg] = future.result()
                     except Exception as error:
-                        logger.error(f"Request for {hg.name} failed: {error!r}")
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        raise
+                        fallback_reasons[hg] = f"request failed ({error!r})"
+                        continue
                     logger.debug(f"Response received for {hg.name} ({hg.model_id})")
         except KeyboardInterrupt:
             logger.error(f"Interrupted by user; abandoning batch with {len(pending)} request(s) still pending")
             executor.shutdown(wait=False, cancel_futures=True)
             raise
-        executor.shutdown()
+        for future, hg in pending.items():
+            future.cancel()
+            fallback_reasons[hg] = f"no response within {timeout:.0f}s"
+        executor.shutdown(wait=False, cancel_futures=True)
         logger.debug("Batch complete")
-        return [responses[hg].get_move(request.registry) for hg, request in request_dict.items()]
+
+        moves = []
+        for hg, request in request_dict.items():
+            response_type = request.kwargs["response_type"]
+            move = None
+            if hg in responses:
+                try:
+                    move = responses[hg].get_move(request.registry)
+                except Exception as error:
+                    fallback_reasons[hg] = f"response could not be resolved ({error!r})"
+            if move is None:
+                move = response_type.fallback(hg, request.registry).get_move(request.registry)
+                try:
+                    consequence = move.describe()
+                except NotImplementedError:
+                    consequence = f"a default {type(move).__name__}"
+                logger.warning(f"{hg.name}: {fallback_reasons[hg]}; falling back — {consequence}")
+            moves.append(move)
+        return moves
 
     def get_gather_events(self, timestamp: DefaultTimestamp, location: InteractiveRoom) -> list[DefaultGameEvent]:
         gathered = [hg for members in self.room_dict.values() for hg in members]

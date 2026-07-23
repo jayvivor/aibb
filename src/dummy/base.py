@@ -34,6 +34,7 @@ class DummyResponse(core.DefaultMoveResponse):
 class DummyOpenMoveResponse(core.OpenMoveResponse, DummyResponse):
 
     def get_move(self, registry: Registry) -> core.DefaultMove:
+        assert(self.actor)
         logger = get_logger()
         actor = self.actor
         neighbor_hgs = [hg for hg in table(registry, core.DefaultHouseguest.Ref).values()]
@@ -78,6 +79,7 @@ class DummyEffortMoveResponse(core.EffortMoveResponse, DummyResponse):
     effort: int = 0
 
     def get_move(self, registry: Registry) -> core.EffortMove:
+        assert(self.actor)
         return core.EffortMove(actor=self.actor, effort=random.randint(1, 100))
 
 
@@ -86,6 +88,7 @@ class DummySchemeMoveResponse(core.SchemeMoveResponse, DummyResponse):
     updated_scratchpad: str = ""
 
     def get_move(self, registry: Registry) -> core.SchemeMove:
+        assert(self.actor)
         return core.SchemeMove(
             actor=self.actor,
             updated_memory=DefaultMemory(content=random.choice(pools.PLATITUDES)),
@@ -97,6 +100,7 @@ class DummyNominationMoveResponse(core.NominationMoveResponse, DummyResponse):
     nominees: list[core.DefaultHouseguest.Ref] = Field(default_factory=list)
 
     def get_move(self, registry: Registry) -> core.NominationMove:
+        assert(self.actor)
         nominatables = [hg for hg in table(registry, core.DefaultHouseguest.Ref).values()]
         return core.NominationMove(actor=self.actor, nominees=random.sample(nominatables, k=2))
 
@@ -104,6 +108,7 @@ class DummyNominationMoveResponse(core.NominationMoveResponse, DummyResponse):
 class DummyVetoMoveResponse(core.VetoMoveResponse, DummyResponse):
 
     def get_move(self, registry: Registry) -> core.VetoMove:
+        assert(self.actor)
         noms = [hg for hg in table(registry, core.DefaultHouseguest.Ref).values()]
         if random.random() < 0.5:
             return core.VetoMove(actor=self.actor, choice=random.choice(noms))
@@ -115,6 +120,7 @@ class DummyReplacementNomineeMoveResponse(core.ReplacementNomineeMoveResponse, D
     choice: Optional[core.DefaultHouseguest.Ref] = None
 
     def get_move(self, registry: Registry) -> core.ReplacementNomineeMove:
+        assert(self.actor)
         replaceables = [hg for hg in table(registry, core.DefaultHouseguest.Ref).values()]
         return core.ReplacementNomineeMove(actor=self.actor, choice=random.choice(replaceables))
 
@@ -124,6 +130,7 @@ class DummyVetoDrawChoiceMoveResponse(core.VetoDrawChoiceMoveResponse, DummyResp
     choice: Optional[core.DefaultHouseguest.Ref] = None
 
     def get_move(self, registry: Registry) -> core.VetoDrawChoiceMove:
+        assert(self.actor)
         choosables = [hg for hg in table(registry, core.DefaultHouseguest.Ref).values()]
         return core.VetoDrawChoiceMove(actor=self.actor, choice=random.choice(choosables))
 
@@ -133,6 +140,7 @@ class DummyEvictionVoteMoveResponse(core.EvictionVoteMoveResponse, DummyResponse
     choice: Optional[core.DefaultHouseguest.Ref] = None
 
     def get_move(self, registry: Registry) -> core.EvictionVoteMove:
+        assert(self.actor)
         noms = [hg for hg in table(registry, core.DefaultHouseguest.Ref).values()]
         return core.EvictionVoteMove(actor=self.actor, choice=random.choice(noms))
 
@@ -142,6 +150,7 @@ class DummyJuryVoteMoveResponse(core.JuryVoteMoveResponse, DummyResponse):
     choice: Optional[core.DefaultHouseguest.Ref] = None
 
     def get_move(self, registry: Registry) -> core.JuryVoteMove:
+        assert(self.actor)
         finalists = [hg for hg in table(registry, core.DefaultHouseguest.Ref).values()]
         return core.JuryVoteMove(actor=self.actor, choice=random.choice(finalists))
 
